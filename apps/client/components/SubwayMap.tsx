@@ -23,6 +23,7 @@ import {
   getRidershipForHour,
 } from "@/services/ridership-data-service";
 
+import { canLoadMap, recordMapLoad, getRemainingLoads } from "@/lib/map-budget";
 import TimeControls from "./TimeControls";
 import Legend from "./Legend";
 import StationPanel from "./StationPanel";
@@ -81,6 +82,20 @@ export default function SubwayMap() {
   const twilightIntensity = isTwilight
     ? Math.sin(daylight * Math.PI) * 0.3 // peaks at 0.3 opacity when daylight=0.5
     : 0;
+
+  // ---- Map budget check ----------------------------------------------------
+  const [budgetOk, setBudgetOk] = useState(true);
+  const [remaining, setRemaining] = useState(45000);
+
+  useEffect(() => {
+    if (!canLoadMap()) {
+      setBudgetOk(false);
+      setRemaining(0);
+      return;
+    }
+    recordMapLoad();
+    setRemaining(getRemainingLoads());
+  }, []);
 
   // ---- Local state --------------------------------------------------------
   const [tracks, setTracks] = useState<TrackGeometry[]>([]);
@@ -310,6 +325,23 @@ export default function SubwayMap() {
   ];
 
   // ---- Render -------------------------------------------------------------
+
+  // Budget exceeded — block map entirely
+  if (!budgetOk) {
+    return (
+      <div className="w-screen h-screen flex flex-col items-center justify-center bg-black text-white">
+        <h1 className="text-2xl font-bold mb-4">Monthly Map Limit Reached</h1>
+        <p className="text-white/60 text-sm max-w-md text-center">
+          To stay within the Mapbox free tier (50,000 loads/month), map loading
+          has been paused. The counter resets on the 1st of next month.
+        </p>
+        <p className="text-white/30 text-xs mt-4">
+          Used: {45000 - remaining} / 45,000 (hard cap with 5K safety buffer)
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`w-screen h-screen relative transition-colors duration-[3000ms] ${isDark ? "bg-black" : "bg-gray-100"}`}
@@ -362,6 +394,9 @@ export default function SubwayMap() {
         </h1>
         <p className={`text-[10px] ${isDark ? "text-white/30" : "text-black/30"}`}>
           Every subway train, visualized
+        </p>
+        <p className={`text-[9px] mt-1 ${isDark ? "text-white/20" : "text-black/20"}`}>
+          {remaining.toLocaleString()} map loads remaining this month
         </p>
       </div>
     </div>
