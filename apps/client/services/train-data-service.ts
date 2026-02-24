@@ -12,19 +12,33 @@ interface RawTrip {
 
 const cache = new Map<string, ProcessedTrain[]>();
 
+// The GTFS schedule repeats by service type (weekday/sat/sun).
+// We only have one sample trip file built from the pipeline.
+// Try the requested date first, then fall back to the sample file.
+const FALLBACK_DATE = "2026-02-24";
+
+async function fetchTrips(date: string): Promise<RawTrip[] | null> {
+  const url = `${CONFIG.DATA_BASE_URL}/trips/${date}.json`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export async function loadTrainsForDate(
   date: string
 ): Promise<ProcessedTrain[]> {
   if (cache.has(date)) return cache.get(date)!;
 
-  const url = `${CONFIG.DATA_BASE_URL}/trips/${date}.json`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    console.warn(`Failed to load trains for ${date}: ${res.status}`);
+  // Try requested date, then fallback to sample data
+  let raw = await fetchTrips(date);
+  if (!raw && date !== FALLBACK_DATE) {
+    raw = await fetchTrips(FALLBACK_DATE);
+  }
+  if (!raw) {
+    console.warn(`No train data available for ${date}`);
     return [];
   }
 
-  const raw: RawTrip[] = await res.json();
   const trains: ProcessedTrain[] = raw.map((t) => ({
     tripId: t.tripId,
     routeShortName: t.routeShortName,

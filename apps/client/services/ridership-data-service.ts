@@ -2,16 +2,18 @@ import type { RidershipEntry } from "@/lib/types";
 import { CONFIG } from "@/lib/config";
 
 const cache = new Map<string, RidershipEntry[]>();
+const failedDates = new Set<string>();
 
 export async function loadRidershipForDate(
   date: string
 ): Promise<RidershipEntry[]> {
   if (cache.has(date)) return cache.get(date)!;
+  if (failedDates.has(date)) return [];
 
   const url = `${CONFIG.DATA_BASE_URL}/ridership/${date}.json`;
   const res = await fetch(url);
   if (!res.ok) {
-    console.warn(`Failed to load ridership for ${date}: ${res.status}`);
+    failedDates.add(date);
     return [];
   }
 
