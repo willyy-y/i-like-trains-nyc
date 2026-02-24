@@ -2,6 +2,7 @@
 
 import type { Station } from "@/lib/types";
 import { getSubwayColor } from "@/lib/subway-colors";
+import { useThemeStore } from "@/lib/stores/theme-store";
 
 interface StationPanelProps {
   station: Station | null;
@@ -14,17 +15,23 @@ export default function StationPanel({
   ridership,
   onClose,
 }: StationPanelProps) {
+  const isDark = useThemeStore((s) => s.resolved) === "dark";
+
   if (!station) return null;
 
+  const panel = isDark
+    ? "bg-black/60 backdrop-blur-xl border-white/10"
+    : "bg-white/60 backdrop-blur-xl border-black/10";
+
   return (
-    <div className="fixed top-4 right-4 w-80 bg-black/60 backdrop-blur-xl rounded-xl border border-white/10 p-5 z-50 animate-in slide-in-from-right">
+    <div className={`fixed top-4 right-4 w-80 ${panel} rounded-xl border p-5 z-50`}>
       <div className="flex items-start justify-between mb-4">
-        <h2 className="text-lg font-bold text-white leading-tight pr-4">
+        <h2 className={`text-lg font-bold leading-tight pr-4 ${isDark ? "text-white" : "text-black"}`}>
           {station.name}
         </h2>
         <button
           onClick={onClose}
-          className="text-white/50 hover:text-white transition-colors text-xl leading-none shrink-0 cursor-pointer"
+          className={`text-xl leading-none shrink-0 cursor-pointer transition-colors ${isDark ? "text-white/50 hover:text-white" : "text-black/50 hover:text-black"}`}
           aria-label="Close panel"
         >
           x
@@ -47,11 +54,11 @@ export default function StationPanel({
       </div>
 
       {ridership !== undefined && (
-        <div className="border-t border-white/10 pt-3">
-          <div className="text-white/50 text-xs uppercase tracking-wide mb-1">
+        <div className={`border-t pt-3 ${isDark ? "border-white/10" : "border-black/10"}`}>
+          <div className={`text-xs uppercase tracking-wide mb-1 ${isDark ? "text-white/50" : "text-black/50"}`}>
             Hourly Ridership
           </div>
-          <div className="text-white text-xl font-bold tabular-nums">
+          <div className={`text-xl font-bold tabular-nums ${isDark ? "text-white" : "text-black"}`}>
             {ridership.toLocaleString()}
           </div>
         </div>

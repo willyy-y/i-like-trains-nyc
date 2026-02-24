@@ -1,7 +1,13 @@
 export const CONFIG = {
   // Mapbox
-  MAPBOX_STYLE: "mapbox://styles/mapbox/dark-v11",
+  MAPBOX_STYLE_DARK: "mapbox://styles/mapbox/dark-v11",
+  MAPBOX_STYLE_LIGHT: "mapbox://styles/mapbox/light-v11",
   MAPBOX_TOKEN: process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "",
+
+  // NYC sunrise/sunset approximate times (hours, varies by season)
+  // Used for auto theme switching
+  NYC_LAT: 40.7128,
+  NYC_LNG: -74.006,
 
   // NYC center
   DEFAULT_VIEW: {

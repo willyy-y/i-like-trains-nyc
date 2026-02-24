@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
+  color-scheme: dark light;
 }
 
 html,
@@ -22,4 +22,9 @@ body {
 
 .mapboxgl-ctrl-attrib {
   display: none !important;
+}
+
+/* Smooth theme transitions on all UI panels */
+.backdrop-blur-xl {
+  transition: background-color 3s ease, border-color 3s ease, color 2s ease;
 }

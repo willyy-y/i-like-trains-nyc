@@ -9,6 +9,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 
 import { CONFIG } from "@/lib/config";
 import { useAnimationStore } from "@/lib/stores/animation-store";
+import { useThemeStore, getMapStyle } from "@/lib/stores/theme-store";
 import { getSubwayColor, getStationColor } from "@/lib/subway-colors";
 import type {
   Station,
@@ -25,6 +26,7 @@ import {
 import TimeControls from "./TimeControls";
 import Legend from "./Legend";
 import StationPanel from "./StationPanel";
+import ThemeToggle from "./ThemeToggle";
 
 // ---------------------------------------------------------------------------
 // Types for raw JSON payloads
@@ -66,6 +68,19 @@ export default function SubwayMap() {
   const activeDate = useAnimationStore((s) => s.activeDate);
   const advanceTime = useAnimationStore((s) => s.advanceTime);
   const setActiveTrainCount = useAnimationStore((s) => s.setActiveTrainCount);
+
+  // ---- Theme store --------------------------------------------------------
+  const resolved = useThemeStore((s) => s.resolved);
+  const daylight = useThemeStore((s) => s.daylight);
+  const resolveForTime = useThemeStore((s) => s.resolveForTime);
+  const isDark = resolved === "dark";
+
+  // Twilight overlay: warm golden tint during sunrise/sunset transitions
+  // Active when daylight is between 0.05 and 0.95 (i.e., during transitions)
+  const isTwilight = daylight > 0.05 && daylight < 0.95;
+  const twilightIntensity = isTwilight
+    ? Math.sin(daylight * Math.PI) * 0.3 // peaks at 0.3 opacity when daylight=0.5
+    : 0;
 
   // ---- Local state --------------------------------------------------------
   const [tracks, setTracks] = useState<TrackGeometry[]>([]);
@@ -149,6 +164,13 @@ export default function SubwayMap() {
     // Only re-run when the hour bucket changes, not every frame
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDate, Math.floor(secondsSinceMidnight(simTimeMs) / 3600), stations]);
+
+  // ---- Resolve theme when sim time changes (every ~minute) ----------------
+  useEffect(() => {
+    resolveForTime(simTimeMs);
+    // Only check every simulated minute to avoid excessive updates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Math.floor(secondsSinceMidnight(simTimeMs) / 60), resolveForTime]);
 
   // ---- Animation loop -----------------------------------------------------
   useEffect(() => {
@@ -277,7 +299,7 @@ export default function SubwayMap() {
       getPosition: (d) => [d.lng, d.lat],
       getText: (d) => d.name,
       getSize: 12,
-      getColor: [255, 255, 255, 200],
+      getColor: isDark ? [255, 255, 255, 200] : [30, 30, 30, 220],
       getTextAnchor: "start" as const,
       getAlignmentBaseline: "center" as const,
       getPixelOffset: [10, 0],
@@ -289,11 +311,23 @@ export default function SubwayMap() {
 
   // ---- Render -------------------------------------------------------------
   return (
-    <div className="w-screen h-screen relative bg-black">
+    <div
+      className={`w-screen h-screen relative transition-colors duration-[3000ms] ${isDark ? "bg-black" : "bg-gray-100"}`}
+    >
       {loading && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black">
-          <div className="text-white/60 text-sm">Loading map data...</div>
+        <div className={`absolute inset-0 z-50 flex items-center justify-center transition-colors duration-[3000ms] ${isDark ? "bg-black" : "bg-gray-100"}`}>
+          <div className={`text-sm ${isDark ? "text-white/60" : "text-black/60"}`}>Loading map data...</div>
         </div>
+      )}
+
+      {/* Twilight overlay — warm golden tint during sunrise/sunset */}
+      {twilightIntensity > 0 && (
+        <div
+          className="absolute inset-0 z-10 pointer-events-none transition-opacity duration-1000"
+          style={{
+            background: `radial-gradient(ellipse at 50% 100%, rgba(255, 140, 50, ${twilightIntensity}), rgba(255, 80, 30, ${twilightIntensity * 0.5}) 50%, transparent 80%)`,
+          }}
+        />
       )}
 
       <DeckGL
@@ -306,13 +340,14 @@ export default function SubwayMap() {
       >
         <Map
           mapboxAccessToken={CONFIG.MAPBOX_TOKEN}
-          mapStyle={CONFIG.MAPBOX_STYLE}
+          mapStyle={getMapStyle(resolved)}
           projection={{ name: "mercator" }}
         />
       </DeckGL>
 
       <TimeControls />
       <Legend />
+      <ThemeToggle />
 
       <StationPanel
         station={selectedStation}
@@ -322,10 +357,10 @@ export default function SubwayMap() {
 
       {/* Title watermark */}
       <div className="fixed top-4 left-4 z-40 select-none pointer-events-none">
-        <h1 className="text-white/80 text-lg font-bold tracking-tight">
+        <h1 className={`text-lg font-bold tracking-tight ${isDark ? "text-white/80" : "text-black/80"}`}>
           I Like Trains NYC
         </h1>
-        <p className="text-white/30 text-[10px]">
+        <p className={`text-[10px] ${isDark ? "text-white/30" : "text-black/30"}`}>
           Every subway train, visualized
         </p>
       </div>

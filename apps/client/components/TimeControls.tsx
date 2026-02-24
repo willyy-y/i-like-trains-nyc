@@ -1,6 +1,7 @@
 "use client";
 
 import { useAnimationStore } from "@/lib/stores/animation-store";
+import { useThemeStore } from "@/lib/stores/theme-store";
 import { CONFIG } from "@/lib/config";
 import TimeDisplay from "./TimeDisplay";
 
@@ -14,6 +15,8 @@ export default function TimeControls() {
   const setSpeedup = useAnimationStore((s) => s.setSpeedup);
   const jumpToDate = useAnimationStore((s) => s.jumpToDate);
   const setSimTimeMs = useAnimationStore((s) => s.setSimTimeMs);
+
+  const isDark = useThemeStore((s) => s.resolved) === "dark";
 
   // Seconds since midnight for the scrub bar
   const d = new Date(simTimeMs);
@@ -31,8 +34,15 @@ export default function TimeControls() {
     jumpToDate(e.target.value);
   }
 
+  const panel = isDark
+    ? "bg-black/60 backdrop-blur-xl border-white/10"
+    : "bg-white/60 backdrop-blur-xl border-black/10";
+  const text = isDark ? "text-white" : "text-black";
+  const textMuted = isDark ? "text-white/30" : "text-black/30";
+  const textSoft = isDark ? "text-white/50" : "text-black/50";
+
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-xl rounded-xl border border-white/10 p-4 z-50 w-[480px] max-w-[95vw] select-none">
+    <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 ${panel} rounded-xl border p-4 z-50 w-[480px] max-w-[95vw] select-none`}>
       <TimeDisplay />
 
       {/* Scrub bar */}
@@ -43,9 +53,9 @@ export default function TimeControls() {
           max={86400}
           value={secondsSinceMidnight}
           onChange={handleScrub}
-          className="w-full h-1 appearance-none bg-white/20 rounded-full outline-none cursor-pointer accent-white"
+          className={`w-full h-1 appearance-none rounded-full outline-none cursor-pointer ${isDark ? "bg-white/20 accent-white" : "bg-black/20 accent-black"}`}
         />
-        <div className="flex justify-between text-[10px] text-white/30 mt-0.5">
+        <div className={`flex justify-between text-[10px] ${textMuted} mt-0.5`}>
           <span>12 AM</span>
           <span>6 AM</span>
           <span>12 PM</span>
@@ -63,13 +73,13 @@ export default function TimeControls() {
           min={CONFIG.DATA_START_DATE}
           max={CONFIG.DATA_END_DATE}
           onChange={handleDateChange}
-          className="bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-xs text-white outline-none cursor-pointer"
+          className={`border rounded-lg px-2 py-1 text-xs outline-none cursor-pointer ${isDark ? "bg-white/10 border-white/10 text-white" : "bg-black/10 border-black/10 text-black"}`}
         />
 
         {/* Play / Pause */}
         <button
           onClick={togglePlay}
-          className="w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 transition-colors flex items-center justify-center text-white text-lg cursor-pointer"
+          className={`w-10 h-10 rounded-full transition-colors flex items-center justify-center text-lg cursor-pointer ${isDark ? "bg-white/15 hover:bg-white/25 text-white" : "bg-black/15 hover:bg-black/25 text-black"}`}
           aria-label={isPlaying ? "Pause" : "Play"}
         >
           {isPlaying ? "\u23F8" : "\u25B6"}
@@ -83,8 +93,8 @@ export default function TimeControls() {
               onClick={() => setSpeedup(s)}
               className={`px-2 py-1 text-xs rounded-lg transition-colors cursor-pointer ${
                 speedup === s
-                  ? "bg-white/25 text-white"
-                  : "bg-white/5 text-white/50 hover:bg-white/15 hover:text-white"
+                  ? isDark ? "bg-white/25 text-white" : "bg-black/25 text-black"
+                  : isDark ? "bg-white/5 text-white/50 hover:bg-white/15 hover:text-white" : "bg-black/5 text-black/50 hover:bg-black/15 hover:text-black"
               }`}
             >
               {CONFIG.SPEED_LABELS[i]}
@@ -94,7 +104,7 @@ export default function TimeControls() {
       </div>
 
       {/* Train count */}
-      <div className="text-center mt-2 text-[10px] text-white/30">
+      <div className={`text-center mt-2 text-[10px] ${textMuted}`}>
         {activeTrainCount > 0
           ? `${activeTrainCount.toLocaleString()} active trains`
           : "No train data loaded"}

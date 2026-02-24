@@ -1,6 +1,7 @@
 "use client";
 
 import { SUBWAY_COLORS } from "@/lib/subway-colors";
+import { useThemeStore } from "@/lib/stores/theme-store";
 
 interface LineGroup {
   label: string;
@@ -22,9 +23,15 @@ const LINE_GROUPS: LineGroup[] = [
 ];
 
 export default function Legend() {
+  const isDark = useThemeStore((s) => s.resolved) === "dark";
+
+  const panel = isDark
+    ? "bg-black/60 backdrop-blur-xl border-white/10"
+    : "bg-white/60 backdrop-blur-xl border-black/10";
+
   return (
-    <div className="fixed bottom-20 left-4 bg-black/60 backdrop-blur-xl rounded-xl border border-white/10 p-3 z-40 select-none">
-      <div className="text-white/50 text-[10px] uppercase tracking-widest mb-2">
+    <div className={`fixed bottom-20 left-4 ${panel} rounded-xl border p-3 z-40 select-none`}>
+      <div className={`text-[10px] uppercase tracking-widest mb-2 ${isDark ? "text-white/50" : "text-black/50"}`}>
         Subway Lines
       </div>
       <div className="flex flex-col gap-1">
@@ -43,7 +50,7 @@ export default function Legend() {
                   </span>
                 ))}
               </div>
-              <span className="text-white/40 text-[10px]">{group.label}</span>
+              <span className={`text-[10px] ${isDark ? "text-white/40" : "text-black/40"}`}>{group.label}</span>
             </div>
           );
         })}
