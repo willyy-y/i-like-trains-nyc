@@ -1,0 +1,19 @@
+{
+  "name": "i-like-trains-nyc",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter client dev",
+    "build": "bun run --filter client build",
+    "pipeline:download": "bun run packages/processing/download-gtfs.ts",
+    "pipeline:tracks": "bun run packages/processing/build-track-geometry.ts",
+    "pipeline:stations": "bun run packages/processing/build-stations.ts",
+    "pipeline:trips": "bun run packages/processing/build-train-trips.ts",
+    "pipeline:ridership": "bun run packages/processing/build-ridership.ts",
+    "pipeline:validate": "bun run packages/processing/validate.ts",
+    "pipeline:all": "bun run pipeline:download && bun run pipeline:tracks && bun run pipeline:stations && bun run pipeline:trips && bun run pipeline:ridership && bun run pipeline:validate"
+  }
+}

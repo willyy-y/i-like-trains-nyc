@@ -1,0 +1,12 @@
+node_modules/
+.next/
+data/
+*.parquet
+.env*
+.DS_Store
+
+# Large generated data files in public (served by dev server but not committed)
+apps/client/public/data/
+# Track geometry and stations are small enough to commit
+# apps/client/public/track-geometry.json
+# apps/client/public/stations.json
