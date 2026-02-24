@@ -42,7 +42,7 @@ export default function TimeControls() {
   const textSoft = isDark ? "text-white/50" : "text-black/50";
 
   return (
-    <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 ${panel} rounded-xl border p-4 z-50 w-[480px] max-w-[95vw] select-none`}>
+    <div className={`fixed top-20 left-4 ${panel} rounded-xl border p-4 z-50 w-[320px] max-w-[95vw] select-none`}>
       <TimeDisplay />
 
       {/* Scrub bar */}
@@ -86,7 +86,7 @@ export default function TimeControls() {
         </button>
 
         {/* Speed presets */}
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           {CONFIG.SPEED_PRESETS.map((s, i) => (
             <button
               key={s}

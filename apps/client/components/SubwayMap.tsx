@@ -371,7 +371,7 @@ export default function SubwayMap() {
         getCursor={() => "grab"}
       >
         <Map
-          mapboxAccessToken={CONFIG.MAPBOX_TOKEN}
+          mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ""}
           mapStyle={getMapStyle(resolved)}
           projection={{ name: "mercator" }}
         />

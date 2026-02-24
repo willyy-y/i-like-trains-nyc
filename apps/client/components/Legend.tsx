@@ -30,7 +30,7 @@ export default function Legend() {
     : "bg-white/60 backdrop-blur-xl border-black/10";
 
   return (
-    <div className={`fixed bottom-20 left-4 ${panel} rounded-xl border p-3 z-40 select-none`}>
+    <div className={`fixed top-[340px] left-4 ${panel} rounded-xl border p-3 z-40 select-none`}>
       <div className={`text-[10px] uppercase tracking-widest mb-2 ${isDark ? "text-white/50" : "text-black/50"}`}>
         Subway Lines
       </div>

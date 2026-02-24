@@ -20,8 +20,8 @@ export const CONFIG = {
 
   // Animation
   DEFAULT_SPEED: 60, // 1 minute per second
-  SPEED_PRESETS: [1, 10, 60, 300, 3600] as const,
-  SPEED_LABELS: ["1x", "10x", "1min/s", "5min/s", "1hr/s"] as const,
+  SPEED_PRESETS: [1, 10, 60, 120, 180, 300, 3600] as const,
+  SPEED_LABELS: ["1x", "10x", "1min/s", "2min/s", "3min/s", "5min/s", "1hr/s"] as const,
   MAX_FRAME_DELTA_MS: 100, // Cap to prevent jumps on tab switch
 
   // Train rendering
