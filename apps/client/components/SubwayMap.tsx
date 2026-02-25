@@ -231,16 +231,22 @@ export default function SubwayMap() {
   }, []);
 
   // ---- Cinematic intro zoom -----------------------------------------------
+  // Uses a ref to accumulate view state and only triggers React setState
+  // at ~30fps to avoid jank from layer re-creation every frame.
+  const viewStateRef = useRef(viewState);
+  const introSyncRef = useRef<number>(0);
+
   useEffect(() => {
     if (loading || introPhase !== "zoom") return;
 
     introStartRef.current = performance.now();
+    let lastSync = 0;
+    const SYNC_INTERVAL = 33; // ~30fps React updates
 
     function introTick(now: number) {
       const elapsed = now - introStartRef.current;
       const progress = Math.min(elapsed / INTRO_DURATION, 1);
 
-      // Find which keyframe segment we're in
       const totalDuration = INTRO_KEYFRAMES[INTRO_KEYFRAMES.length - 1].time;
       const currentTime = progress * totalDuration;
 
@@ -262,12 +268,17 @@ export default function SubwayMap() {
         segProgress
       );
 
-      setViewState(interpolated);
+      viewStateRef.current = interpolated;
+
+      // Throttle React state updates to reduce layer re-creation
+      if (now - lastSync > SYNC_INTERVAL || progress >= 1) {
+        lastSync = now;
+        setViewState(interpolated);
+      }
 
       if (progress < 1) {
         introRafRef.current = requestAnimationFrame(introTick);
       } else {
-        // Intro zoom complete — start UI reveal
         setIntroPhase("reveal");
       }
     }
@@ -348,18 +359,30 @@ export default function SubwayMap() {
   }, [isPlaying, advanceTime]);
 
   // ---- Flythrough tour animation ------------------------------------------
+  // Throttled to ~30fps React updates to avoid jank from layer re-creation.
   useEffect(() => {
     if (!isTouring) return;
     let lastTs = performance.now();
+    let lastSync = 0;
+    const SYNC_INTERVAL = 33; // ~30fps React updates
 
     function tourTick(now: number) {
-      const delta = (now - lastTs) / 1000; // seconds
+      const delta = (now - lastTs) / 1000;
       lastTs = now;
       cameraTick(delta);
       const vs = useCameraStore.getState().getViewState();
-      if (vs) setViewState(vs);
+      if (vs) {
+        viewStateRef.current = vs;
+        if (now - lastSync > SYNC_INTERVAL) {
+          lastSync = now;
+          setViewState(vs);
+        }
+      }
       if (useCameraStore.getState().isTouring) {
         requestAnimationFrame(tourTick);
+      } else {
+        // Tour ended — sync final position
+        if (vs) setViewState(vs);
       }
     }
 

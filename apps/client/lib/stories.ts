@@ -11,25 +11,25 @@ export const STORY_PRESETS: StoryPreset[] = [
   {
     id: "normal-tuesday",
     title: "Normal Tuesday",
-    description: "The baseline rhythm — watch the city's daily heartbeat.",
+    description: "The baseline rhythm — watch stations pulse with ridership.",
     date: "2024-03-12",
     startTimeSec: 5 * 3600, // 5 AM
-    speed: 3600, // 1hr/s
+    speed: 120, // 2min/s
   },
   {
     id: "saturday",
     title: "Saturday Vibes",
-    description: "Slower mornings, busier nights — the weekend tempo.",
+    description: "Slower mornings, busier nights — stations glow differently on weekends.",
     date: "2024-03-16",
     startTimeSec: 8 * 3600, // 8 AM
-    speed: 3600,
+    speed: 120,
   },
   {
     id: "nye-2023",
     title: "New Year's Eve 2023",
-    description: "Late night service spike after midnight — the ball drops.",
+    description: "Watch the midnight spike — stations light up as the ball drops.",
     date: "2023-12-31",
     startTimeSec: 18 * 3600, // 6 PM
-    speed: 3600,
+    speed: 120,
   },
 ];

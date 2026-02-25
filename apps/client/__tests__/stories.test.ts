@@ -29,4 +29,10 @@ describe("stories", () => {
     expect(titles.some((t) => t.includes("saturday") || t.includes("weekend"))).toBe(true);
     expect(titles.some((t) => t.includes("eve") || t.includes("nye") || t.includes("year"))).toBe(true);
   });
+
+  it("all presets use 2min/s speed (120)", () => {
+    for (const story of STORY_PRESETS) {
+      expect(story.speed).toBe(120);
+    }
+  });
 });

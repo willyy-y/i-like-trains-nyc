@@ -47,6 +47,9 @@ export default function StoriesDrawer() {
           <div className={`text-[10px] uppercase tracking-widest mb-3 ${isDark ? "text-white/50" : "text-black/50"}`}>
             NYC Moments
           </div>
+          <div className={`text-[10px] mb-3 ${isDark ? "text-white/35" : "text-black/35"}`}>
+            These dates have real ridership data — watch stations pulse brighter at rush hour.
+          </div>
           <div className="flex flex-col gap-2">
             {STORY_PRESETS.map((story) => (
               <button
