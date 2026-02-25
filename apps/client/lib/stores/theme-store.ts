@@ -74,7 +74,7 @@ function computeDaylight(mode: ThemeMode, simTimeMs: number): number {
 }
 
 export const useThemeStore = create<ThemeStore>((set, get) => ({
-  mode: "auto",
+  mode: "dark",
   resolved: "dark",
   daylight: 0,
 

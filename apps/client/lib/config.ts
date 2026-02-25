@@ -42,7 +42,9 @@ export const CONFIG = {
   TRACK_OPACITY: 60,
 
   // Data
-  DATA_BASE_URL: process.env.NEXT_PUBLIC_BLOB_URL || "/data",
+  DATA_BASE_URL: process.env.NEXT_PUBLIC_BLOB_URL
+    ? `${process.env.NEXT_PUBLIC_BLOB_URL}/data`
+    : "/data",
   BATCH_DURATION_MINUTES: 30,
   PREFETCH_THRESHOLD_MINUTES: 5,
 
