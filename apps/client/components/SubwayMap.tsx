@@ -585,9 +585,12 @@ export default function SubwayMap() {
     setSelectedLines(new Set());
   }, []);
 
-  // ---- Compute live stats: top 5 fastest trains + cumulative distance -----
-  const fastestTrains: FastestTrain[] = useMemo(() => {
-    const top: FastestTrain[] = [];
+  // ---- Speed leaderboard: top 3 fastest speeds recorded since page load ---
+  const leaderboardRef = useRef<FastestTrain[]>([]);
+  const [speedLeaderboard, setSpeedLeaderboard] = useState<FastestTrain[]>([]);
+
+  useMemo(() => {
+    let changed = false;
 
     for (const train of activeTrains) {
       const ts = train.timestamps;
@@ -615,20 +618,35 @@ export default function SubwayMap() {
       const distMiles = 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
       const speedMph = (distMiles / dt) * 3600;
+      const rounded = Math.round(speedMph);
 
-      // Filter out unrealistic speeds (GPS noise / data artifacts)
+      // Filter out unrealistic speeds and check if it beats the leaderboard
       if (speedMph > 0.5 && speedMph < 120) {
-        top.push({
-          routeShortName: train.routeShortName,
-          color: train.color,
-          speedMph: Math.round(speedMph),
-        });
+        const board = leaderboardRef.current;
+        const minOnBoard = board.length >= 3 ? board[board.length - 1].speedMph : 0;
+
+        if (rounded > minOnBoard || board.length < 3) {
+          // Check for duplicate (same line + same speed already on board)
+          const isDupe = board.some(
+            (b) => b.routeShortName === train.routeShortName && b.speedMph === rounded
+          );
+          if (!isDupe) {
+            board.push({
+              routeShortName: train.routeShortName,
+              color: train.color,
+              speedMph: rounded,
+            });
+            board.sort((a, b) => b.speedMph - a.speedMph);
+            if (board.length > 3) board.length = 3;
+            changed = true;
+          }
+        }
       }
     }
 
-    // Sort descending by speed, take top 5
-    top.sort((a, b) => b.speedMph - a.speedMph);
-    return top.slice(0, 5);
+    if (changed) {
+      setSpeedLeaderboard([...leaderboardRef.current]);
+    }
   }, [activeTrains, currentTimeSec]);
 
   // Accumulate total distance traveled across all trains (resets on refresh)
@@ -944,7 +962,7 @@ export default function SubwayMap() {
         style={{ transitionDelay: "900ms" }}
       >
         <LiveStatsPanel
-          fastestTrains={fastestTrains}
+          fastestTrains={speedLeaderboard}
           totalDistanceMiles={totalDistanceMiles}
         />
         <CinematicButton />

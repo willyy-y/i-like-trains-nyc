@@ -45,10 +45,10 @@ export default function LiveStatsPanel({
         </div>
       </div>
 
-      {/* Top 5 fastest trains */}
+      {/* Speed leaderboard — top 3 all-time since page load */}
       <div className="mb-2.5">
         <div className={`text-[9px] uppercase tracking-wider mb-1 ${textDim}`}>
-          Fastest Trains
+          Top Speed
         </div>
         {fastestTrains.length > 0 ? (
           <div className="flex flex-col gap-1">

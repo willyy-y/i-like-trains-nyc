@@ -190,20 +190,17 @@ describe("computeFastestTrain", () => {
   });
 });
 
-describe("computeTopFastestTrains", () => {
+describe("computeTopFastestTrains (leaderboard)", () => {
   it("returns empty array for no trains", () => {
     expect(computeTopFastestTrains([], 28860)).toEqual([]);
   });
 
-  it("returns up to 5 trains sorted by speed", () => {
+  it("returns up to 3 trains sorted by speed (leaderboard default)", () => {
     // Create 7 trains with different speeds
     const trains: TrainSegment[] = [];
-    const speeds = [10, 30, 50, 20, 40, 60, 15]; // will be sorted: 60,50,40,30,20 (top 5)
+    const speeds = [10, 30, 50, 20, 40, 60, 15];
     for (let i = 0; i < speeds.length; i++) {
-      // Distance = speed * time / 3600, time = 120s
-      // We use different endpoints to get different speeds
-      const dist = (speeds[i] * 120) / 3600; // miles
-      // Approximate: 1 degree lat ≈ 69 miles
+      const dist = (speeds[i] * 120) / 3600;
       const dLat = dist / 69;
       trains.push({
         routeShortName: String.fromCharCode(65 + i),
@@ -215,23 +212,40 @@ describe("computeTopFastestTrains", () => {
         timestamps: [28800, 28920],
       });
     }
-    const result = computeTopFastestTrains(trains, 28860, 5);
-    expect(result.length).toBe(5);
+    const result = computeTopFastestTrains(trains, 28860, 3);
+    expect(result.length).toBe(3);
     // Should be sorted descending
     for (let i = 0; i < result.length - 1; i++) {
       expect(result[i].speedMph).toBeGreaterThanOrEqual(result[i + 1].speedMph);
     }
   });
 
-  it("returns fewer than 5 if not enough valid trains", () => {
-    const result = computeTopFastestTrains([SAMPLE_TRAIN], 28860, 5);
+  it("returns fewer than 3 if not enough valid trains", () => {
+    const result = computeTopFastestTrains([SAMPLE_TRAIN], 28860, 3);
     expect(result.length).toBe(1);
     expect(result[0].routeShortName).toBe("7");
   });
 
   it("excludes stationary trains", () => {
-    const result = computeTopFastestTrains([STATIONARY_TRAIN], 28860, 5);
+    const result = computeTopFastestTrains([STATIONARY_TRAIN], 28860, 3);
     expect(result.length).toBe(0);
+  });
+
+  it("respects custom count parameter", () => {
+    const trains: TrainSegment[] = [];
+    for (let i = 0; i < 5; i++) {
+      const speed = 20 + i * 10;
+      const dist = (speed * 120) / 3600;
+      const dLat = dist / 69;
+      trains.push({
+        routeShortName: String.fromCharCode(65 + i),
+        color: [100, 100, 100],
+        path: [[-73.985, 40.758], [-73.985, 40.758 + dLat]],
+        timestamps: [28800, 28920],
+      });
+    }
+    expect(computeTopFastestTrains(trains, 28860, 2).length).toBe(2);
+    expect(computeTopFastestTrains(trains, 28860, 5).length).toBe(5);
   });
 });
 
