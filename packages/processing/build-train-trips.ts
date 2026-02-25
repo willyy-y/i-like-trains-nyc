@@ -303,7 +303,17 @@ interface TripOutput {
 // Main
 // ---------------------------------------------------------------------------
 
-const WAYPOINTS_PER_SEGMENT = 15;
+/** Adaptive waypoint count based on segment distance in meters. */
+function waypointsForSegment(distMeters: number): number {
+  if (distMeters < 300) return 3;
+  if (distMeters <= 800) return 6;
+  return 12;
+}
+
+/** Round coordinate to 5 decimal places (~1.1m precision) — plenty for visual rendering. */
+function q5(n: number): number {
+  return Math.round(n * 100000) / 100000;
+}
 
 async function main() {
   const start = performance.now();
@@ -421,6 +431,8 @@ async function main() {
     for (let i = 0; i < stopDistances.length - 1; i++) {
       const from = stopDistances[i];
       const to = stopDistances[i + 1];
+      const segDist = to.dist - from.dist;
+      const numWaypoints = waypointsForSegment(segDist);
 
       const { path: segPath, timestamps: segTs } = interpolateAlongShape(
         shape,
@@ -428,13 +440,13 @@ async function main() {
         to.dist,
         from.time,
         to.time,
-        WAYPOINTS_PER_SEGMENT
+        numWaypoints
       );
 
       // Avoid duplicate points at segment boundaries
       const startIdx = i === 0 ? 0 : 1;
       for (let j = startIdx; j < segPath.length; j++) {
-        fullPath.push(segPath[j]);
+        fullPath.push([q5(segPath[j][0]), q5(segPath[j][1])]);
         fullTimestamps.push(segTs[j]);
       }
     }
@@ -454,6 +466,11 @@ async function main() {
   const outPath = path.join(TRIPS_DIR, `${targetDate}.json`);
   const json = JSON.stringify(output);
   await Bun.write(outPath, json);
+
+  // Copy to public dir for frontend
+  const publicTripsDir = path.join(ROOT, "apps", "client", "public", "data", "trips");
+  mkdirSync(publicTripsDir, { recursive: true });
+  await Bun.write(path.join(publicTripsDir, `${targetDate}.json`), json);
 
   const elapsed = ((performance.now() - start) / 1000).toFixed(1);
   console.log(`\nTrip Trajectory Summary (${targetDate}):`);

@@ -49,7 +49,7 @@ export default function TimeControls() {
   const textMuted = isDark ? "text-white/30" : "text-black/30";
 
   return (
-    <div className={`fixed top-20 left-4 ${panel} rounded-xl border p-3 z-50 select-none`}>
+    <div className={`fixed top-20 left-4 max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:rounded-none max-sm:rounded-t-xl ${panel} rounded-xl border p-3 z-50 select-none`}>
       {/* Time + play/pause row */}
       <div className="flex items-center gap-2">
         <button

@@ -16,7 +16,12 @@ function formatDate(ms: number): string {
   return `${y}-${m}-${day}`;
 }
 
+// Estimated peak active trains for a typical weekday rush hour
+const ESTIMATED_PEAK_TRAINS = 500;
+
 interface AnimationStore extends AnimationState {
+  /** System load 0.0-1.0 derived from activeTrainCount / peak estimate */
+  systemLoad: number;
   play: () => void;
   pause: () => void;
   togglePlay: () => void;
@@ -36,6 +41,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   activeDate: formatDate(defaultSimTimeMs),
   activeTrainCount: 0,
   lastFrameTime: 0,
+  systemLoad: 0,
 
   play: () =>
     set({ isPlaying: true, lastFrameTime: performance.now() }),
@@ -75,7 +81,11 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
     });
   },
 
-  setActiveTrainCount: (n: number) => set({ activeTrainCount: n }),
+  setActiveTrainCount: (n: number) =>
+    set({
+      activeTrainCount: n,
+      systemLoad: Math.min(1, n / ESTIMATED_PEAK_TRAINS),
+    }),
 
   setSimTimeMs: (ms: number) =>
     set({

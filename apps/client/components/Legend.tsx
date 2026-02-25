@@ -22,23 +22,51 @@ const LINE_GROUPS: LineGroup[] = [
   { label: "Shuttles", lines: ["S"], color: SUBWAY_COLORS["S"] },
 ];
 
-export default function Legend() {
+interface LegendProps {
+  selectedLine: string | null;
+  onSelectLine: (line: string | null) => void;
+}
+
+export default function Legend({ selectedLine, onSelectLine }: LegendProps) {
   const isDark = useThemeStore((s) => s.resolved) === "dark";
 
   const panel = isDark
     ? "bg-black/60 backdrop-blur-xl border-white/10"
     : "bg-white/60 backdrop-blur-xl border-black/10";
 
+  function handleGroupClick(group: LineGroup) {
+    // If clicking the already-selected group, deselect
+    if (selectedLine && group.lines.includes(selectedLine)) {
+      onSelectLine(null);
+    } else {
+      onSelectLine(group.lines[0]);
+    }
+  }
+
+  const isGroupSelected = (group: LineGroup) =>
+    selectedLine !== null && group.lines.includes(selectedLine);
+
   return (
-    <div className={`fixed top-[220px] left-4 ${panel} rounded-xl border p-3 z-40 select-none`}>
+    <div className={`fixed top-[220px] left-4 max-sm:hidden ${panel} rounded-xl border p-3 z-40 select-none`}>
       <div className={`text-[10px] uppercase tracking-widest mb-2 ${isDark ? "text-white/50" : "text-black/50"}`}>
         Subway Lines
       </div>
       <div className="flex flex-col gap-1">
         {LINE_GROUPS.map((group) => {
           const [r, g, b] = group.color;
+          const selected = isGroupSelected(group);
           return (
-            <div key={group.label} className="flex items-center gap-2">
+            <div
+              key={group.label}
+              className={`flex items-center gap-2 px-1.5 py-0.5 rounded-lg cursor-pointer transition-all ${
+                selected
+                  ? "ring-1 ring-white/40 bg-white/10"
+                  : selectedLine
+                  ? "opacity-30"
+                  : "hover:bg-white/5"
+              }`}
+              onClick={() => handleGroupClick(group)}
+            >
               <div className="flex gap-0.5">
                 {group.lines.map((line) => (
                   <span
