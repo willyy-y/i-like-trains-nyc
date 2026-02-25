@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DeckGL } from "@deck.gl/react";
 import Map from "react-map-gl";
 import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
@@ -10,7 +10,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { CONFIG } from "@/lib/config";
 import { useAnimationStore } from "@/lib/stores/animation-store";
 import { useThemeStore, getMapStyle } from "@/lib/stores/theme-store";
-import { getSubwayColor, getStationColor } from "@/lib/subway-colors";
+import { getSubwayColor, getStationColor, SUBWAY_COLORS } from "@/lib/subway-colors";
 import type {
   Station,
   TrackGeometry,
@@ -30,7 +30,8 @@ import Legend from "./Legend";
 import StationPanel from "./StationPanel";
 import ThemeToggle from "./ThemeToggle";
 import ShareButton from "./ShareButton";
-import StoriesDrawer from "./StoriesDrawer";
+import LiveStatsPanel from "./LiveStatsPanel";
+import type { LineGroupStat, TopStation } from "./LiveStatsPanel";
 import CinematicButton from "./CinematicButton";
 import { useCameraStore } from "@/lib/stores/camera-store";
 
@@ -79,6 +80,28 @@ function lerpViewState(
   return result;
 }
 
+// Line group definitions (shared between isolation and stats)
+const LINE_GROUPS: { group: string; lines: string[] }[] = [
+  { group: "123", lines: ["1", "2", "3"] },
+  { group: "456", lines: ["4", "5", "6"] },
+  { group: "7", lines: ["7"] },
+  { group: "ACE", lines: ["A", "C", "E"] },
+  { group: "BDFM", lines: ["B", "D", "F", "M"] },
+  { group: "G", lines: ["G"] },
+  { group: "JZ", lines: ["J", "Z"] },
+  { group: "L", lines: ["L"] },
+  { group: "NQRW", lines: ["N", "Q", "R", "W"] },
+  { group: "S", lines: ["S"] },
+];
+
+// Build a route→group lookup
+const ROUTE_TO_GROUP: Record<string, string[]> = {};
+for (const g of LINE_GROUPS) {
+  for (const l of g.lines) {
+    ROUTE_TO_GROUP[l] = g.lines;
+  }
+}
+
 // Intro camera keyframes
 const INTRO_KEYFRAMES = [
   { time: 0, view: { longitude: -73.985, latitude: 40.748, zoom: 3, pitch: 0, bearing: 0 } },
@@ -95,11 +118,50 @@ const INTRO_DURATION = 3500; // ms
 export default function SubwayMap() {
   // ---- Animation store ----------------------------------------------------
   const isPlaying = useAnimationStore((s) => s.isPlaying);
-  const simTimeMs = useAnimationStore((s) => s.simTimeMs);
   const activeDate = useAnimationStore((s) => s.activeDate);
   const advanceTime = useAnimationStore((s) => s.advanceTime);
   const setActiveTrainCount = useAnimationStore((s) => s.setActiveTrainCount);
   const systemLoad = useAnimationStore((s) => s.systemLoad);
+
+  // ---- Throttled sim time (updates once per sim-second, not every frame) --
+  const [currentTimeSec, setCurrentTimeSec] = useState(() =>
+    secondsSinceMidnight(useAnimationStore.getState().simTimeMs)
+  );
+  const [simTimeMs, setSimTimeMsLocal] = useState(() =>
+    useAnimationStore.getState().simTimeMs
+  );
+  const lastSecRef = useRef(currentTimeSec);
+
+  // Sync local time state from store at ~integer-second boundaries
+  useEffect(() => {
+    if (!isPlaying) {
+      // When paused, subscribe to store changes directly
+      const unsub = useAnimationStore.subscribe((state) => {
+        const sec = secondsSinceMidnight(state.simTimeMs);
+        if (sec !== lastSecRef.current) {
+          lastSecRef.current = sec;
+          setCurrentTimeSec(sec);
+          setSimTimeMsLocal(state.simTimeMs);
+        }
+      });
+      return unsub;
+    }
+
+    // When playing, poll from rAF instead of subscribing to every store update
+    let raf = 0;
+    function poll() {
+      const state = useAnimationStore.getState();
+      const sec = secondsSinceMidnight(state.simTimeMs);
+      if (sec !== lastSecRef.current) {
+        lastSecRef.current = sec;
+        setCurrentTimeSec(sec);
+        setSimTimeMsLocal(state.simTimeMs);
+      }
+      raf = requestAnimationFrame(poll);
+    }
+    raf = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying]);
 
   // ---- Theme store --------------------------------------------------------
   const resolved = useThemeStore((s) => s.resolved);
@@ -156,6 +218,9 @@ export default function SubwayMap() {
 
   // ---- Line isolation state (Step 5a) -------------------------------------
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
+
+  // ---- Render quality: train glow toggle (off = lite mode, saves GPU) ----
+  const [glowEnabled, setGlowEnabled] = useState(false);
 
   // ---- Train following state (Step 5c) ------------------------------------
   const [followedTrain, setFollowedTrain] = useState<ProcessedTrain | null>(null);
@@ -390,9 +455,12 @@ export default function SubwayMap() {
     return () => cancelAnimationFrame(raf);
   }, [isTouring, cameraTick]);
 
-  // ---- Update active train count ------------------------------------------
-  const currentTimeSec = secondsSinceMidnight(simTimeMs);
-  const activeTrains = getCurrentTrains(trains, currentTimeSec);
+  // ---- Memoize activeTrains (1a) ------------------------------------------
+  const activeTrains = useMemo(
+    () => getCurrentTrains(trains, currentTimeSec),
+    [trains, currentTimeSec]
+  );
+
   useEffect(() => {
     setActiveTrainCount(activeTrains.length);
   }, [activeTrains.length, setActiveTrainCount]);
@@ -489,20 +557,7 @@ export default function SubwayMap() {
   const lineAlpha = useCallback(
     (route: string): number => {
       if (!selectedLine) return 255;
-      // Check if this route belongs to the selected line group
-      const groups: Record<string, string[]> = {
-        "1": ["1", "2", "3"], "2": ["1", "2", "3"], "3": ["1", "2", "3"],
-        "4": ["4", "5", "6"], "5": ["4", "5", "6"], "6": ["4", "5", "6"],
-        "7": ["7"],
-        "A": ["A", "C", "E"], "C": ["A", "C", "E"], "E": ["A", "C", "E"],
-        "B": ["B", "D", "F", "M"], "D": ["B", "D", "F", "M"], "F": ["B", "D", "F", "M"], "M": ["B", "D", "F", "M"],
-        "G": ["G"],
-        "J": ["J", "Z"], "Z": ["J", "Z"],
-        "L": ["L"],
-        "N": ["N", "Q", "R", "W"], "Q": ["N", "Q", "R", "W"], "R": ["N", "Q", "R", "W"], "W": ["N", "Q", "R", "W"],
-        "S": ["S"],
-      };
-      const group = groups[selectedLine];
+      const group = ROUTE_TO_GROUP[selectedLine];
       if (group && group.includes(route)) return 255;
       return 20; // 8% opacity
     },
@@ -512,144 +567,183 @@ export default function SubwayMap() {
   const stationMatchesLine = useCallback(
     (stationLines: string[]): boolean => {
       if (!selectedLine) return true;
-      const groups: Record<string, string[]> = {
-        "1": ["1", "2", "3"], "2": ["1", "2", "3"], "3": ["1", "2", "3"],
-        "4": ["4", "5", "6"], "5": ["4", "5", "6"], "6": ["4", "5", "6"],
-        "7": ["7"],
-        "A": ["A", "C", "E"], "C": ["A", "C", "E"], "E": ["A", "C", "E"],
-        "B": ["B", "D", "F", "M"], "D": ["B", "D", "F", "M"], "F": ["B", "D", "F", "M"], "M": ["B", "D", "F", "M"],
-        "G": ["G"],
-        "J": ["J", "Z"], "Z": ["J", "Z"],
-        "L": ["L"],
-        "N": ["N", "Q", "R", "W"], "Q": ["N", "Q", "R", "W"], "R": ["N", "Q", "R", "W"], "W": ["N", "Q", "R", "W"],
-        "S": ["S"],
-      };
-      const group = groups[selectedLine];
+      const group = ROUTE_TO_GROUP[selectedLine];
       if (!group) return true;
       return stationLines.some((l) => group.includes(l));
     },
     [selectedLine]
   );
 
-  // ---- Build layers -------------------------------------------------------
-  const layers = [
-    // 1. Ghost tracks
-    new PathLayer<TrackGeometry>({
-      id: "ghost-tracks",
-      data: tracks,
-      getPath: (d) => d.coordinates,
-      getColor: (d) => [...d.color, selectedLine ? lineAlpha(d.routeShortName) * (CONFIG.TRACK_OPACITY / 255) : CONFIG.TRACK_OPACITY] as [number, number, number, number],
-      getWidth: CONFIG.TRACK_WIDTH_PX,
-      widthUnits: "pixels" as const,
-      widthMinPixels: 1,
-      capRounded: true,
-      jointRounded: true,
-      pickable: false,
-      updateTriggers: { getColor: [selectedLine] },
-    }),
+  // ---- Compute live stats (2c) --------------------------------------------
+  const lineStats: LineGroupStat[] = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const train of activeTrains) {
+      const route = train.routeShortName;
+      // Find which group this route belongs to
+      for (const g of LINE_GROUPS) {
+        if (g.lines.includes(route)) {
+          counts[g.group] = (counts[g.group] || 0) + 1;
+          break;
+        }
+      }
+    }
+    return LINE_GROUPS
+      .map((g) => ({
+        group: g.group,
+        lines: g.lines,
+        count: counts[g.group] || 0,
+        color: (SUBWAY_COLORS[g.lines[0]] || [200, 200, 200]) as [number, number, number],
+      }))
+      .filter((g) => g.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [activeTrains]);
 
-    // 2. Station glow (outer halo) — opacity modulated by system load
-    new ScatterplotLayer<StationWithRidership>({
-      id: "station-glow",
-      data: stationsWithRidership,
-      getPosition: (d) => [d.lng, d.lat],
-      getRadius: (d) => d.glowRadius,
-      getFillColor: (d) => {
-        const breathe = 0.3 + 0.7 * systemLoad;
-        const match = stationMatchesLine(d.lines);
-        const alpha = match ? Math.round(CONFIG.STATION_GLOW_OPACITY * breathe) : 5;
-        return [...getStationColor(d.lines), alpha] as [number, number, number, number];
-      },
-      radiusUnits: "meters" as const,
-      pickable: true,
-      onClick: handleStationClick,
-      autoHighlight: true,
-      highlightColor: [255, 255, 255, 60],
-      updateTriggers: { getFillColor: [systemLoad, selectedLine] },
-    }),
+  const topStations: TopStation[] = useMemo(() => {
+    if (stationsWithRidership.length === 0) return [];
+    return [...stationsWithRidership]
+      .sort((a, b) => b.ridership - a.ridership)
+      .slice(0, 3)
+      .map((s) => ({ name: s.name, ridership: s.ridership }));
+  }, [stationsWithRidership]);
 
-    // 3. Station core (inner dot)
-    new ScatterplotLayer<StationWithRidership>({
-      id: "station-core",
-      data: stationsWithRidership,
-      getPosition: (d) => [d.lng, d.lat],
-      getRadius: CONFIG.STATION_CORE_RADIUS,
-      getFillColor: (d) => {
-        const c = getStationColor(d.lines);
-        const brightness = 120 + Math.round(d.ridershipNormalized * 135);
-        const match = stationMatchesLine(d.lines);
-        const alpha = match ? CONFIG.STATION_CORE_OPACITY : 15;
-        return [
-          Math.min(255, Math.round((c[0] / 255) * brightness + (255 - brightness))),
-          Math.min(255, Math.round((c[1] / 255) * brightness + (255 - brightness))),
-          Math.min(255, Math.round((c[2] / 255) * brightness + (255 - brightness))),
-          alpha,
-        ] as [number, number, number, number];
-      },
-      radiusUnits: "meters" as const,
-      pickable: true,
-      onClick: handleStationClick,
-      updateTriggers: { getFillColor: [selectedLine] },
-    }),
+  // ---- Memoize layers (1b) -----------------------------------------------
+  const zoomLevel = viewState.zoom ?? 11;
+  const layers = useMemo(
+    () => [
+      // 1. Ghost tracks
+      new PathLayer<TrackGeometry>({
+        id: "ghost-tracks",
+        data: tracks,
+        getPath: (d) => d.coordinates,
+        getColor: (d) => [...d.color, selectedLine ? lineAlpha(d.routeShortName) * (CONFIG.TRACK_OPACITY / 255) : CONFIG.TRACK_OPACITY] as [number, number, number, number],
+        getWidth: CONFIG.TRACK_WIDTH_PX,
+        widthUnits: "pixels" as const,
+        widthMinPixels: 1,
+        capRounded: true,
+        jointRounded: true,
+        pickable: false,
+        updateTriggers: { getColor: [selectedLine] },
+      }),
 
-    // 4a. Train glow underlayer — soft neon bloom
-    new TripsLayer<ProcessedTrain>({
-      id: "train-glow",
-      data: activeTrains,
-      getPath: (d) => d.path,
-      getTimestamps: (d) => d.timestamps,
-      getColor: (d) => {
-        const glowAlpha = Math.round(60 * (1.0 - daylight * 0.6));
-        const alpha = selectedLine ? Math.round(glowAlpha * lineAlpha(d.routeShortName) / 255) : glowAlpha;
-        return [...d.color, alpha] as [number, number, number, number];
-      },
-      currentTime: currentTimeSec,
-      trailLength: 60,
-      widthMinPixels: 12,
-      capRounded: true,
-      jointRounded: true,
-      fadeTrail: true,
-      pickable: false,
-      updateTriggers: { getColor: [daylight, selectedLine] },
-    }),
+      // 2. Station glow (outer halo) — opacity modulated by system load
+      new ScatterplotLayer<StationWithRidership>({
+        id: "station-glow",
+        data: stationsWithRidership,
+        getPosition: (d) => [d.lng, d.lat],
+        getRadius: (d) => d.glowRadius,
+        getFillColor: (d) => {
+          const breathe = 0.3 + 0.7 * systemLoad;
+          const match = stationMatchesLine(d.lines);
+          const alpha = match ? Math.round(CONFIG.STATION_GLOW_OPACITY * breathe) : 5;
+          return [...getStationColor(d.lines), alpha] as [number, number, number, number];
+        },
+        radiusUnits: "meters" as const,
+        pickable: true,
+        onClick: handleStationClick,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 60],
+        updateTriggers: { getFillColor: [systemLoad, selectedLine] },
+      }),
 
-    // 4b. Train worms (TripsLayer)
-    new TripsLayer<ProcessedTrain>({
-      id: "trains",
-      data: activeTrains,
-      getPath: (d) => d.path,
-      getTimestamps: (d) => d.timestamps,
-      getColor: (d) => {
-        const alpha = selectedLine ? lineAlpha(d.routeShortName) : 240;
-        return [...d.color, alpha] as [number, number, number, number];
-      },
-      currentTime: currentTimeSec,
-      trailLength: CONFIG.TRAIN_TRAIL_LENGTH,
-      widthMinPixels: CONFIG.TRAIN_WIDTH_PX,
-      capRounded: true,
-      jointRounded: true,
-      fadeTrail: true,
-      pickable: true,
-      onClick: handleTrainClick,
-      updateTriggers: { getColor: [selectedLine] },
-    }),
+      // 3. Station core (inner dot)
+      new ScatterplotLayer<StationWithRidership>({
+        id: "station-core",
+        data: stationsWithRidership,
+        getPosition: (d) => [d.lng, d.lat],
+        getRadius: CONFIG.STATION_CORE_RADIUS,
+        getFillColor: (d) => {
+          const c = getStationColor(d.lines);
+          const brightness = 120 + Math.round(d.ridershipNormalized * 135);
+          const match = stationMatchesLine(d.lines);
+          const alpha = match ? CONFIG.STATION_CORE_OPACITY : 15;
+          return [
+            Math.min(255, Math.round((c[0] / 255) * brightness + (255 - brightness))),
+            Math.min(255, Math.round((c[1] / 255) * brightness + (255 - brightness))),
+            Math.min(255, Math.round((c[2] / 255) * brightness + (255 - brightness))),
+            alpha,
+          ] as [number, number, number, number];
+        },
+        radiusUnits: "meters" as const,
+        pickable: true,
+        onClick: handleStationClick,
+        updateTriggers: { getFillColor: [selectedLine] },
+      }),
 
-    // 5. Station names (visible at high zoom)
-    new TextLayer<StationWithRidership>({
-      id: "station-names",
-      data: stationsWithRidership,
-      getPosition: (d) => [d.lng, d.lat],
-      getText: (d) => d.name,
-      getSize: 12,
-      getColor: isDark ? [255, 255, 255, 200] : [30, 30, 30, 220],
-      getTextAnchor: "start" as const,
-      getAlignmentBaseline: "center" as const,
-      getPixelOffset: [10, 0],
-      fontFamily: "Inter, system-ui, sans-serif",
-      visible: (viewState.zoom ?? 11) > CONFIG.STATION_NAME_ZOOM_THRESHOLD,
-      pickable: false,
-    }),
-  ];
+      // 4a. Train glow underlayer — soft neon bloom (opt-in, heavy on GPU)
+      ...(glowEnabled ? [new TripsLayer<ProcessedTrain>({
+        id: "train-glow",
+        data: activeTrains,
+        getPath: (d) => d.path,
+        getTimestamps: (d) => d.timestamps,
+        getColor: (d) => {
+          const glowAlpha = Math.round(60 * (1.0 - daylight * 0.6));
+          const alpha = selectedLine ? Math.round(glowAlpha * lineAlpha(d.routeShortName) / 255) : glowAlpha;
+          return [...d.color, alpha] as [number, number, number, number];
+        },
+        currentTime: currentTimeSec,
+        trailLength: 60,
+        widthMinPixels: 12,
+        capRounded: true,
+        jointRounded: true,
+        fadeTrail: true,
+        pickable: false,
+        updateTriggers: { getColor: [daylight, selectedLine] },
+      })] : []),
+
+      // 4b. Train worms (TripsLayer)
+      new TripsLayer<ProcessedTrain>({
+        id: "trains",
+        data: activeTrains,
+        getPath: (d) => d.path,
+        getTimestamps: (d) => d.timestamps,
+        getColor: (d) => {
+          const alpha = selectedLine ? lineAlpha(d.routeShortName) : 240;
+          return [...d.color, alpha] as [number, number, number, number];
+        },
+        currentTime: currentTimeSec,
+        trailLength: CONFIG.TRAIN_TRAIL_LENGTH,
+        widthMinPixels: CONFIG.TRAIN_WIDTH_PX,
+        capRounded: true,
+        jointRounded: true,
+        fadeTrail: true,
+        pickable: true,
+        onClick: handleTrainClick,
+        updateTriggers: { getColor: [selectedLine] },
+      }),
+
+      // 5. Station names (visible at high zoom)
+      new TextLayer<StationWithRidership>({
+        id: "station-names",
+        data: stationsWithRidership,
+        getPosition: (d) => [d.lng, d.lat],
+        getText: (d) => d.name,
+        getSize: 12,
+        getColor: isDark ? [255, 255, 255, 200] : [30, 30, 30, 220],
+        getTextAnchor: "start" as const,
+        getAlignmentBaseline: "center" as const,
+        getPixelOffset: [10, 0],
+        fontFamily: "Inter, system-ui, sans-serif",
+        visible: zoomLevel > CONFIG.STATION_NAME_ZOOM_THRESHOLD,
+        pickable: false,
+      }),
+    ],
+    [
+      tracks,
+      stationsWithRidership,
+      activeTrains,
+      currentTimeSec,
+      systemLoad,
+      daylight,
+      isDark,
+      selectedLine,
+      zoomLevel,
+      glowEnabled,
+      lineAlpha,
+      stationMatchesLine,
+      handleStationClick,
+      handleTrainClick,
+    ]
+  );
 
   // ---- Render -------------------------------------------------------------
 
@@ -771,12 +865,19 @@ export default function SubwayMap() {
       </div>
 
       <div
-        className={`fixed bottom-4 left-4 max-sm:bottom-20 z-40 flex gap-2 transition-all duration-[600ms] ${
+        className={`fixed bottom-4 left-4 max-sm:bottom-20 z-40 flex gap-2 items-end transition-all duration-[600ms] ${
           uiVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         }`}
         style={{ transitionDelay: "900ms" }}
       >
-        <StoriesDrawer />
+        <LiveStatsPanel
+          lineStats={lineStats}
+          topStations={topStations}
+          onSelectLine={setSelectedLine}
+          selectedLine={selectedLine}
+          glowEnabled={glowEnabled}
+          onToggleGlow={() => setGlowEnabled((v) => !v)}
+        />
         <CinematicButton />
       </div>
 

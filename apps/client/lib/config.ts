@@ -25,8 +25,8 @@ export const CONFIG = {
   MAX_FRAME_DELTA_MS: 100, // Cap to prevent jumps on tab switch
 
   // Train rendering
-  TRAIN_TRAIL_LENGTH: 45, // seconds of trail behind train
-  TRAIN_WIDTH_PX: 5,
+  TRAIN_TRAIL_LENGTH: 30, // seconds of trail behind train
+  TRAIN_WIDTH_PX: 6,
   TRAIN_WORM_SEGMENTS: 8, // number of segments in the worm body
 
   // Station rendering
