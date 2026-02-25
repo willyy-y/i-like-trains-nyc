@@ -1,160 +1,217 @@
 import { describe, it, expect } from "vitest";
-import type { ProcessedTrain, StationWithRidership } from "@/lib/types";
-import { SUBWAY_COLORS } from "@/lib/subway-colors";
 
 // ---------------------------------------------------------------------------
-// Helpers — replicate the logic from SubwayMap for testability
+// Helpers — replicate the speed/distance logic from SubwayMap for testability
 // ---------------------------------------------------------------------------
 
-const LINE_GROUPS = [
-  { group: "123", lines: ["1", "2", "3"] },
-  { group: "456", lines: ["4", "5", "6"] },
-  { group: "7", lines: ["7"] },
-  { group: "ACE", lines: ["A", "C", "E"] },
-  { group: "BDFM", lines: ["B", "D", "F", "M"] },
-  { group: "G", lines: ["G"] },
-  { group: "JZ", lines: ["J", "Z"] },
-  { group: "L", lines: ["L"] },
-  { group: "NQRW", lines: ["N", "Q", "R", "W"] },
-  { group: "S", lines: ["S"] },
-];
-
-interface LineGroupStat {
-  group: string;
-  lines: string[];
-  count: number;
+interface TrainSegment {
+  routeShortName: string;
   color: [number, number, number];
+  path: [number, number][];
+  timestamps: number[];
 }
 
-interface TopStation {
-  name: string;
-  ridership: number;
+interface FastestTrain {
+  routeShortName: string;
+  color: [number, number, number];
+  speedMph: number;
 }
 
-function computeLineStats(activeTrains: Pick<ProcessedTrain, "routeShortName">[]): LineGroupStat[] {
-  const counts: Record<string, number> = {};
-  for (const train of activeTrains) {
-    const route = train.routeShortName;
-    for (const g of LINE_GROUPS) {
-      if (g.lines.includes(route)) {
-        counts[g.group] = (counts[g.group] || 0) + 1;
-        break;
-      }
+function haversineDistMiles(
+  lng1: number, lat1: number, lng2: number, lat2: number
+): number {
+  const r1 = lat1 * Math.PI / 180;
+  const r2 = lat2 * Math.PI / 180;
+  const dLat = r2 - r1;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(r1) * Math.cos(r2) * Math.sin(dLng / 2) ** 2;
+  return 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function computeFastestTrain(
+  trains: TrainSegment[],
+  currentTimeSec: number
+): FastestTrain | null {
+  let best: FastestTrain | null = null;
+  let bestSpeed = 0;
+
+  for (const train of trains) {
+    const ts = train.timestamps;
+    const path = train.path;
+    if (ts.length < 2) continue;
+
+    let lo = 0;
+    let hi = ts.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (ts[mid] <= currentTimeSec) lo = mid;
+      else hi = mid;
+    }
+
+    const dt = ts[hi] - ts[lo];
+    if (dt <= 0) continue;
+
+    const distMiles = haversineDistMiles(
+      path[lo][0], path[lo][1], path[hi][0], path[hi][1]
+    );
+    const speedMph = (distMiles / dt) * 3600;
+
+    if (speedMph > 0.5 && speedMph < 120 && speedMph > bestSpeed) {
+      bestSpeed = speedMph;
+      best = {
+        routeShortName: train.routeShortName,
+        color: train.color,
+        speedMph: Math.round(speedMph),
+      };
     }
   }
-  return LINE_GROUPS
-    .map((g) => ({
-      group: g.group,
-      lines: g.lines,
-      count: counts[g.group] || 0,
-      color: (SUBWAY_COLORS[g.lines[0]] || [200, 200, 200]) as [number, number, number],
-    }))
-    .filter((g) => g.count > 0)
-    .sort((a, b) => b.count - a.count);
+  return best;
 }
 
-function computeTopStations(stations: Pick<StationWithRidership, "name" | "ridership">[]): TopStation[] {
-  return [...stations]
-    .sort((a, b) => b.ridership - a.ridership)
-    .slice(0, 3)
-    .map((s) => ({ name: s.name, ridership: s.ridership }));
+function computeDistanceIncrement(
+  trains: TrainSegment[],
+  currentTimeSec: number,
+  dtSec: number
+): number {
+  let total = 0;
+  for (const train of trains) {
+    const ts = train.timestamps;
+    const path = train.path;
+    if (ts.length < 2) continue;
+
+    let lo = 0;
+    let hi = ts.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (ts[mid] <= currentTimeSec) lo = mid;
+      else hi = mid;
+    }
+
+    const segDt = ts[hi] - ts[lo];
+    if (segDt <= 0) continue;
+
+    const distMiles = haversineDistMiles(
+      path[lo][0], path[lo][1], path[hi][0], path[hi][1]
+    );
+    const speedMph = (distMiles / segDt) * 3600;
+    if (speedMph > 120) continue;
+
+    total += (distMiles / segDt) * dtSec;
+  }
+  return total;
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("computeLineStats", () => {
-  it("returns empty array for no trains", () => {
-    expect(computeLineStats([])).toEqual([]);
+// A train going from Times Sq area to Grand Central area (~0.9 mi) in 120 sec
+const SAMPLE_TRAIN: TrainSegment = {
+  routeShortName: "7",
+  color: [185, 51, 173],
+  path: [
+    [-73.9857, 40.7580], // Times Sq
+    [-73.9772, 40.7527], // Grand Central
+  ],
+  timestamps: [28800, 28920], // 8:00 AM to 8:02 AM
+};
+
+// A stationary train (same coordinates)
+const STATIONARY_TRAIN: TrainSegment = {
+  routeShortName: "L",
+  color: [167, 169, 172],
+  path: [
+    [-73.9857, 40.7580],
+    [-73.9857, 40.7580],
+  ],
+  timestamps: [28800, 28920],
+};
+
+describe("computeFastestTrain", () => {
+  it("returns null for no trains", () => {
+    expect(computeFastestTrain([], 28860)).toBeNull();
   });
 
-  it("aggregates trains by line group", () => {
-    const trains = [
-      { routeShortName: "1" },
-      { routeShortName: "2" },
-      { routeShortName: "3" },
-      { routeShortName: "A" },
-      { routeShortName: "A" },
-    ];
-    const stats = computeLineStats(trains);
-    expect(stats[0].group).toBe("123");
-    expect(stats[0].count).toBe(3);
-    expect(stats[1].group).toBe("ACE");
-    expect(stats[1].count).toBe(2);
+  it("returns null for trains with < 2 waypoints", () => {
+    const train = { ...SAMPLE_TRAIN, path: [[-73.9857, 40.7580]] as [number, number][], timestamps: [28800] };
+    expect(computeFastestTrain([train], 28860)).toBeNull();
   });
 
-  it("sorts by count descending", () => {
-    const trains = [
-      { routeShortName: "L" },
-      { routeShortName: "L" },
-      { routeShortName: "L" },
-      { routeShortName: "7" },
-    ];
-    const stats = computeLineStats(trains);
-    expect(stats[0].group).toBe("L");
-    expect(stats[0].count).toBe(3);
-    expect(stats[1].group).toBe("7");
-    expect(stats[1].count).toBe(1);
+  it("computes speed for a moving train", () => {
+    const result = computeFastestTrain([SAMPLE_TRAIN], 28860);
+    expect(result).not.toBeNull();
+    expect(result!.routeShortName).toBe("7");
+    // ~0.55 miles in 120 sec = ~16.5 mph (subway speed)
+    expect(result!.speedMph).toBeGreaterThan(10);
+    expect(result!.speedMph).toBeLessThan(30);
   });
 
-  it("filters out groups with zero trains", () => {
-    const trains = [{ routeShortName: "G" }];
-    const stats = computeLineStats(trains);
-    expect(stats).toHaveLength(1);
-    expect(stats[0].group).toBe("G");
+  it("filters out stationary trains (speed < 0.5 mph)", () => {
+    expect(computeFastestTrain([STATIONARY_TRAIN], 28860)).toBeNull();
   });
 
-  it("assigns correct color from SUBWAY_COLORS", () => {
-    const trains = [{ routeShortName: "N" }];
-    const stats = computeLineStats(trains);
-    expect(stats[0].color).toEqual(SUBWAY_COLORS["N"]);
+  it("picks the faster of two trains", () => {
+    const fastTrain: TrainSegment = {
+      routeShortName: "A",
+      color: [0, 57, 166],
+      path: [
+        [-73.9857, 40.7580],
+        [-73.9200, 40.6900], // ~5.5 mi apart
+      ],
+      timestamps: [28800, 28860], // 60 sec → ~330 mph but we cap at 120 — need realistic
+    };
+    // Make it fast but under 120 mph: ~5.5 mi in 300 sec = ~66 mph
+    fastTrain.timestamps = [28800, 29100];
+    const result = computeFastestTrain([SAMPLE_TRAIN, fastTrain], 28900);
+    expect(result!.routeShortName).toBe("A");
   });
 
-  it("handles unknown route gracefully", () => {
-    const trains = [{ routeShortName: "X" }];
-    const stats = computeLineStats(trains);
-    // Unknown routes don't match any group → empty
-    expect(stats).toHaveLength(0);
+  it("filters out unrealistic speeds (> 120 mph)", () => {
+    const teleportTrain: TrainSegment = {
+      routeShortName: "S",
+      color: [128, 129, 131],
+      path: [
+        [-73.9857, 40.7580],
+        [-74.5, 41.5], // way too far
+      ],
+      timestamps: [28800, 28801], // 1 second
+    };
+    expect(computeFastestTrain([teleportTrain], 28800)).toBeNull();
   });
 });
 
-describe("computeTopStations", () => {
-  it("returns empty array for no stations", () => {
-    expect(computeTopStations([])).toEqual([]);
+describe("computeDistanceIncrement", () => {
+  it("returns 0 for no trains", () => {
+    expect(computeDistanceIncrement([], 28860, 1)).toBe(0);
   });
 
-  it("returns top 3 stations by ridership", () => {
-    const stations = [
-      { name: "Times Sq", ridership: 5000 },
-      { name: "Grand Central", ridership: 4000 },
-      { name: "Union Sq", ridership: 3000 },
-      { name: "Canal St", ridership: 2000 },
-      { name: "City Hall", ridership: 1000 },
-    ];
-    const top = computeTopStations(stations);
-    expect(top).toHaveLength(3);
-    expect(top[0].name).toBe("Times Sq");
-    expect(top[1].name).toBe("Grand Central");
-    expect(top[2].name).toBe("Union Sq");
+  it("accumulates distance proportional to dt", () => {
+    const d1 = computeDistanceIncrement([SAMPLE_TRAIN], 28860, 1);
+    const d2 = computeDistanceIncrement([SAMPLE_TRAIN], 28860, 2);
+    expect(d2).toBeCloseTo(d1 * 2, 5);
   });
 
-  it("handles fewer than 3 stations", () => {
-    const stations = [{ name: "Only One", ridership: 100 }];
-    const top = computeTopStations(stations);
-    expect(top).toHaveLength(1);
-    expect(top[0].name).toBe("Only One");
+  it("skips stationary trains", () => {
+    const d = computeDistanceIncrement([STATIONARY_TRAIN], 28860, 1);
+    expect(d).toBe(0);
   });
 
-  it("sorts descending by ridership", () => {
-    const stations = [
-      { name: "Low", ridership: 10 },
-      { name: "High", ridership: 9999 },
-      { name: "Mid", ridership: 500 },
-    ];
-    const top = computeTopStations(stations);
-    expect(top[0].ridership).toBe(9999);
-    expect(top[1].ridership).toBe(500);
-    expect(top[2].ridership).toBe(10);
+  it("sums distance from multiple trains", () => {
+    const d1 = computeDistanceIncrement([SAMPLE_TRAIN], 28860, 1);
+    const d2 = computeDistanceIncrement([SAMPLE_TRAIN, SAMPLE_TRAIN], 28860, 1);
+    expect(d2).toBeCloseTo(d1 * 2, 5);
+  });
+});
+
+describe("haversineDistMiles", () => {
+  it("returns 0 for same point", () => {
+    expect(haversineDistMiles(-73.98, 40.75, -73.98, 40.75)).toBe(0);
+  });
+
+  it("computes roughly correct NYC distance", () => {
+    // Times Sq to Grand Central is ~0.5 miles
+    const d = haversineDistMiles(-73.9857, 40.7580, -73.9772, 40.7527);
+    expect(d).toBeGreaterThan(0.3);
+    expect(d).toBeLessThan(0.8);
   });
 });

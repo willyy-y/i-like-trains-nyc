@@ -10,7 +10,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { CONFIG } from "@/lib/config";
 import { useAnimationStore } from "@/lib/stores/animation-store";
 import { useThemeStore, getMapStyle } from "@/lib/stores/theme-store";
-import { getSubwayColor, getStationColor, SUBWAY_COLORS } from "@/lib/subway-colors";
+import { getSubwayColor, getStationColor } from "@/lib/subway-colors";
 import type {
   Station,
   TrackGeometry,
@@ -31,7 +31,7 @@ import StationPanel from "./StationPanel";
 import ThemeToggle from "./ThemeToggle";
 import ShareButton from "./ShareButton";
 import LiveStatsPanel from "./LiveStatsPanel";
-import type { LineGroupStat, TopStation } from "./LiveStatsPanel";
+import type { FastestTrain } from "./LiveStatsPanel";
 import CinematicButton from "./CinematicButton";
 import { useCameraStore } from "@/lib/stores/camera-store";
 
@@ -218,9 +218,6 @@ export default function SubwayMap() {
 
   // ---- Line isolation state (Step 5a) -------------------------------------
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
-
-  // ---- Render quality: train glow toggle (off = lite mode, saves GPU) ----
-  const [glowEnabled, setGlowEnabled] = useState(false);
 
   // ---- Train following state (Step 5c) ------------------------------------
   const [followedTrain, setFollowedTrain] = useState<ProcessedTrain | null>(null);
@@ -574,37 +571,97 @@ export default function SubwayMap() {
     [selectedLine]
   );
 
-  // ---- Compute live stats (2c) --------------------------------------------
-  const lineStats: LineGroupStat[] = useMemo(() => {
-    const counts: Record<string, number> = {};
+  // ---- Compute live stats: fastest train + cumulative distance ------------
+  const fastestTrain: FastestTrain | null = useMemo(() => {
+    let best: FastestTrain | null = null;
+    let bestSpeed = 0;
+
     for (const train of activeTrains) {
-      const route = train.routeShortName;
-      // Find which group this route belongs to
-      for (const g of LINE_GROUPS) {
-        if (g.lines.includes(route)) {
-          counts[g.group] = (counts[g.group] || 0) + 1;
-          break;
-        }
+      const ts = train.timestamps;
+      const path = train.path;
+      if (ts.length < 2) continue;
+
+      // Find current segment via binary search
+      let lo = 0;
+      let hi = ts.length - 1;
+      while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1;
+        if (ts[mid] <= currentTimeSec) lo = mid;
+        else hi = mid;
+      }
+
+      const dt = ts[hi] - ts[lo];
+      if (dt <= 0) continue;
+
+      // Haversine distance between segment endpoints
+      const lat1 = path[lo][1] * Math.PI / 180;
+      const lat2 = path[hi][1] * Math.PI / 180;
+      const dLat = lat2 - lat1;
+      const dLng = (path[hi][0] - path[lo][0]) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+      const distMiles = 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      const speedMph = (distMiles / dt) * 3600;
+
+      // Filter out unrealistic speeds (GPS noise / data artifacts)
+      if (speedMph > 0.5 && speedMph < 120 && speedMph > bestSpeed) {
+        bestSpeed = speedMph;
+        best = {
+          routeShortName: train.routeShortName,
+          color: train.color,
+          speedMph: Math.round(speedMph),
+        };
       }
     }
-    return LINE_GROUPS
-      .map((g) => ({
-        group: g.group,
-        lines: g.lines,
-        count: counts[g.group] || 0,
-        color: (SUBWAY_COLORS[g.lines[0]] || [200, 200, 200]) as [number, number, number],
-      }))
-      .filter((g) => g.count > 0)
-      .sort((a, b) => b.count - a.count);
-  }, [activeTrains]);
+    return best;
+  }, [activeTrains, currentTimeSec]);
 
-  const topStations: TopStation[] = useMemo(() => {
-    if (stationsWithRidership.length === 0) return [];
-    return [...stationsWithRidership]
-      .sort((a, b) => b.ridership - a.ridership)
-      .slice(0, 3)
-      .map((s) => ({ name: s.name, ridership: s.ridership }));
-  }, [stationsWithRidership]);
+  // Accumulate total distance traveled across all trains (resets on refresh)
+  const distanceRef = useRef(0);
+  const prevTimeSecRef = useRef(currentTimeSec);
+
+  useMemo(() => {
+    const prevSec = prevTimeSecRef.current;
+    const dtSec = currentTimeSec - prevSec;
+    prevTimeSecRef.current = currentTimeSec;
+
+    // Only accumulate for reasonable forward steps (skip jumps/rewinds)
+    if (dtSec <= 0 || dtSec > 10) return distanceRef.current;
+
+    for (const train of activeTrains) {
+      const ts = train.timestamps;
+      const path = train.path;
+      if (ts.length < 2) continue;
+
+      // Find current segment
+      let lo = 0;
+      let hi = ts.length - 1;
+      while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1;
+        if (ts[mid] <= currentTimeSec) lo = mid;
+        else hi = mid;
+      }
+
+      const segDt = ts[hi] - ts[lo];
+      if (segDt <= 0) continue;
+
+      const lat1 = path[lo][1] * Math.PI / 180;
+      const lat2 = path[hi][1] * Math.PI / 180;
+      const dLat = lat2 - lat1;
+      const dLng = (path[hi][0] - path[lo][0]) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+      const segDistMiles = 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      const speedMph = (segDistMiles / segDt) * 3600;
+      if (speedMph > 120) continue; // skip bad data
+
+      // Distance this train traveled in dtSec
+      distanceRef.current += (segDistMiles / segDt) * dtSec;
+    }
+    return distanceRef.current;
+  }, [activeTrains, currentTimeSec]);
+
+  const totalDistanceMiles = Math.round(distanceRef.current);
 
   // ---- Memoize layers (1b) -----------------------------------------------
   const zoomLevel = viewState.zoom ?? 11;
@@ -669,28 +726,7 @@ export default function SubwayMap() {
         updateTriggers: { getFillColor: [selectedLine] },
       }),
 
-      // 4a. Train glow underlayer — soft neon bloom (opt-in, heavy on GPU)
-      ...(glowEnabled ? [new TripsLayer<ProcessedTrain>({
-        id: "train-glow",
-        data: activeTrains,
-        getPath: (d) => d.path,
-        getTimestamps: (d) => d.timestamps,
-        getColor: (d) => {
-          const glowAlpha = Math.round(60 * (1.0 - daylight * 0.6));
-          const alpha = selectedLine ? Math.round(glowAlpha * lineAlpha(d.routeShortName) / 255) : glowAlpha;
-          return [...d.color, alpha] as [number, number, number, number];
-        },
-        currentTime: currentTimeSec,
-        trailLength: 60,
-        widthMinPixels: 12,
-        capRounded: true,
-        jointRounded: true,
-        fadeTrail: true,
-        pickable: false,
-        updateTriggers: { getColor: [daylight, selectedLine] },
-      })] : []),
-
-      // 4b. Train worms (TripsLayer)
+      // 4. Train worms (TripsLayer)
       new TripsLayer<ProcessedTrain>({
         id: "trains",
         data: activeTrains,
@@ -737,7 +773,6 @@ export default function SubwayMap() {
       isDark,
       selectedLine,
       zoomLevel,
-      glowEnabled,
       lineAlpha,
       stationMatchesLine,
       handleStationClick,
@@ -871,12 +906,8 @@ export default function SubwayMap() {
         style={{ transitionDelay: "900ms" }}
       >
         <LiveStatsPanel
-          lineStats={lineStats}
-          topStations={topStations}
-          onSelectLine={setSelectedLine}
-          selectedLine={selectedLine}
-          glowEnabled={glowEnabled}
-          onToggleGlow={() => setGlowEnabled((v) => !v)}
+          fastestTrain={fastestTrain}
+          totalDistanceMiles={totalDistanceMiles}
         />
         <CinematicButton />
       </div>
