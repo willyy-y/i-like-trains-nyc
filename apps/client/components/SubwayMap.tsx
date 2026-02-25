@@ -748,7 +748,7 @@ export default function SubwayMap() {
       </div>
 
       <div
-        className={`transition-all duration-[600ms] ${
+        className={`fixed bottom-4 left-4 max-sm:bottom-20 z-40 flex gap-2 transition-all duration-[600ms] ${
           uiVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         }`}
         style={{ transitionDelay: "900ms" }}

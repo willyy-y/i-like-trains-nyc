@@ -16,7 +16,7 @@ export default function CinematicButton() {
   return (
     <button
       onClick={isTouring ? stopTour : startTour}
-      className={`fixed bottom-4 left-32 max-sm:bottom-20 max-sm:left-28 z-40 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition-colors ${btnClass}`}
+      className={`px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition-colors ${btnClass}`}
     >
       {isTouring ? "Stop Tour" : "Tour"}
     </button>

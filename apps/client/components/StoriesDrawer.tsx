@@ -33,7 +33,7 @@ export default function StoriesDrawer() {
     <>
       <button
         onClick={() => setOpen(!open)}
-        className={`fixed bottom-4 left-4 max-sm:bottom-20 z-40 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition-colors ${
+        className={`px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition-colors ${
           isDark
             ? "bg-white/10 hover:bg-white/20 text-white/70 border-white/10"
             : "bg-black/5 hover:bg-black/10 text-black/70 border-black/10"
