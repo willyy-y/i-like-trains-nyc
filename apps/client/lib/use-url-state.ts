@@ -10,7 +10,7 @@ interface URLState {
   date?: string;
   t?: number; // seconds since midnight
   speed?: number;
-  line?: string;
+  lines?: string[]; // multi-select lines (empty = all)
 }
 
 export function parseURLState(): URLState {
@@ -32,14 +32,14 @@ export function parseURLState(): URLState {
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) state.date = date;
   if (t) state.t = parseInt(t);
   if (speed) state.speed = parseInt(speed);
-  if (line) state.line = line;
+  if (line) state.lines = line.split(",").filter(Boolean);
 
   return state;
 }
 
 export function useURLStateSync(
   viewState: { latitude?: number; longitude?: number; zoom?: number },
-  selectedLine: string | null
+  selectedLines: Set<string>
 ) {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -59,12 +59,14 @@ export function useURLStateSync(
       params.set("t", String(secs));
       params.set("speed", String(store.speedup));
 
-      if (selectedLine) params.set("line", selectedLine);
+      if (selectedLines.size > 0) {
+        params.set("line", [...selectedLines].join(","));
+      }
 
       const url = `${window.location.pathname}?${params.toString()}`;
       window.history.replaceState(null, "", url);
     }, 500);
 
     return () => clearTimeout(debounceRef.current);
-  }, [viewState.latitude, viewState.longitude, viewState.zoom, selectedLine]);
+  }, [viewState.latitude, viewState.longitude, viewState.zoom, selectedLines]);
 }

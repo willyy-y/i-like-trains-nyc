@@ -10,17 +10,8 @@ export interface FastestTrain {
 }
 
 interface LiveStatsPanelProps {
-  fastestTrain: FastestTrain | null;
+  fastestTrains: FastestTrain[];
   totalDistanceMiles: number;
-}
-
-function formatTime(ms: number): string {
-  const d = new Date(ms);
-  const h = d.getHours();
-  const m = String(d.getMinutes()).padStart(2, "0");
-  const ampm = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${h12}:${m} ${ampm}`;
 }
 
 function formatDistance(miles: number): string {
@@ -29,11 +20,10 @@ function formatDistance(miles: number): string {
 }
 
 export default function LiveStatsPanel({
-  fastestTrain,
+  fastestTrains,
   totalDistanceMiles,
 }: LiveStatsPanelProps) {
   const isDark = useThemeStore((s) => s.resolved) === "dark";
-  const simTimeMs = useAnimationStore((s) => s.simTimeMs);
   const activeTrainCount = useAnimationStore((s) => s.activeTrainCount);
 
   const textPrimary = isDark ? "text-white" : "text-black";
@@ -45,20 +35,6 @@ export default function LiveStatsPanel({
 
   return (
     <div className={`w-48 ${panel} rounded-xl border p-3 z-50`}>
-      {/* Header: LIVE + time */}
-      <div className="flex items-center gap-2 mb-2.5">
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-        </span>
-        <span className={`text-[10px] uppercase tracking-widest font-semibold ${textMuted}`}>
-          Live
-        </span>
-        <span className={`text-[10px] ml-auto font-mono ${textDim}`}>
-          {formatTime(simTimeMs)}
-        </span>
-      </div>
-
       {/* Active train count */}
       <div className="mb-2.5">
         <div className={`text-[9px] uppercase tracking-wider mb-0.5 ${textDim}`}>
@@ -69,23 +45,27 @@ export default function LiveStatsPanel({
         </div>
       </div>
 
-      {/* Fastest train */}
+      {/* Top 5 fastest trains */}
       <div className="mb-2.5">
-        <div className={`text-[9px] uppercase tracking-wider mb-0.5 ${textDim}`}>
-          Fastest Train
+        <div className={`text-[9px] uppercase tracking-wider mb-1 ${textDim}`}>
+          Fastest Trains
         </div>
-        {fastestTrain ? (
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-white shrink-0"
-              style={{ backgroundColor: `rgb(${fastestTrain.color.join(",")})` }}
-            >
-              {fastestTrain.routeShortName}
-            </span>
-            <span className={`text-lg font-bold tabular-nums leading-tight ${textPrimary}`}>
-              {fastestTrain.speedMph}
-            </span>
-            <span className={`text-[10px] ${textMuted}`}>mph</span>
+        {fastestTrains.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {fastestTrains.map((train, i) => (
+              <div key={`${train.routeShortName}-${i}`} className="flex items-center gap-2">
+                <span
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold text-white shrink-0"
+                  style={{ backgroundColor: `rgb(${train.color.join(",")})` }}
+                >
+                  {train.routeShortName}
+                </span>
+                <span className={`text-sm font-bold tabular-nums leading-tight ${textPrimary}`}>
+                  {train.speedMph}
+                </span>
+                <span className={`text-[9px] ${textMuted}`}>mph</span>
+              </div>
+            ))}
           </div>
         ) : (
           <div className={`text-sm ${textDim}`}>---</div>
@@ -103,6 +83,7 @@ export default function LiveStatsPanel({
           </span>
           <span className={`text-[10px] ${textMuted}`}>mi</span>
         </div>
+        <div className={`text-[8px] ${textDim}`}>resets on refresh</div>
       </div>
     </div>
   );

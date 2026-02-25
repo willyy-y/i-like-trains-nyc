@@ -48,14 +48,26 @@ describe("parseURLState", () => {
     expect(state.speed).toBe(3600);
   });
 
-  it("parses line", () => {
+  it("parses single line as array", () => {
     window.location.search = "?line=A";
     const state = parseURLState();
-    expect(state.line).toBe("A");
+    expect(state.lines).toEqual(["A"]);
   });
 
-  it("parses full URL with all params", () => {
-    window.location.search = "?lat=40.748&lng=-73.985&z=11.5&date=2024-03-12&t=30600&speed=60&line=A";
+  it("parses comma-separated multi-select lines", () => {
+    window.location.search = "?line=1,A,G";
+    const state = parseURLState();
+    expect(state.lines).toEqual(["1", "A", "G"]);
+  });
+
+  it("returns undefined lines when no line param", () => {
+    window.location.search = "?lat=40.748";
+    const state = parseURLState();
+    expect(state.lines).toBeUndefined();
+  });
+
+  it("parses full URL with all params including multi-select lines", () => {
+    window.location.search = "?lat=40.748&lng=-73.985&z=11.5&date=2024-03-12&t=30600&speed=60&line=A,C,E";
     const state = parseURLState();
     expect(state.lat).toBeCloseTo(40.748);
     expect(state.lng).toBeCloseTo(-73.985);
@@ -63,6 +75,6 @@ describe("parseURLState", () => {
     expect(state.date).toBe("2024-03-12");
     expect(state.t).toBe(30600);
     expect(state.speed).toBe(60);
-    expect(state.line).toBe("A");
+    expect(state.lines).toEqual(["A", "C", "E"]);
   });
 });

@@ -23,45 +23,72 @@ const LINE_GROUPS: LineGroup[] = [
 ];
 
 interface LegendProps {
-  selectedLine: string | null;
-  onSelectLine: (line: string | null) => void;
+  selectedLines: Set<string>;
+  onToggleLine: (lines: string[]) => void;
+  onSelectAll: () => void;
 }
 
-export default function Legend({ selectedLine, onSelectLine }: LegendProps) {
+export default function Legend({ selectedLines, onToggleLine, onSelectAll }: LegendProps) {
   const isDark = useThemeStore((s) => s.resolved) === "dark";
 
   const panel = isDark
     ? "bg-black/60 backdrop-blur-xl border-white/10"
     : "bg-white/60 backdrop-blur-xl border-black/10";
 
+  const allSelected = selectedLines.size === 0;
+
+  function isGroupSelected(group: LineGroup): boolean {
+    if (allSelected) return true;
+    return group.lines.some((l) => selectedLines.has(l));
+  }
+
   function handleGroupClick(group: LineGroup) {
-    // If clicking the already-selected group, deselect
-    if (selectedLine && group.lines.includes(selectedLine)) {
-      onSelectLine(null);
+    if (allSelected) {
+      // All showing + click a group → isolate just that group
+      onToggleLine(group.lines);
+    } else if (isGroupSelected(group)) {
+      // Group is selected → remove it
+      const remaining = new Set(selectedLines);
+      for (const l of group.lines) remaining.delete(l);
+      if (remaining.size === 0) {
+        // If removing makes it empty, back to all
+        onSelectAll();
+      } else {
+        // Convert remaining to the lines to keep
+        onToggleLine([...remaining]);
+      }
     } else {
-      onSelectLine(group.lines[0]);
+      // Group not selected → add it (union)
+      const merged = new Set(selectedLines);
+      for (const l of group.lines) merged.add(l);
+      onToggleLine([...merged]);
     }
   }
 
-  const isGroupSelected = (group: LineGroup) =>
-    selectedLine !== null && group.lines.includes(selectedLine);
-
   return (
-    <div className={`fixed top-[220px] left-4 max-sm:hidden ${panel} rounded-xl border p-3 z-40 select-none`}>
-      <div className={`text-[10px] uppercase tracking-widest mb-2 ${isDark ? "text-white/50" : "text-black/50"}`}>
-        Subway Lines
-      </div>
-      <div className="flex flex-col gap-1">
+    <div className={`fixed top-[220px] left-4 max-sm:hidden ${panel} rounded-xl border p-2 z-40 select-none`}>
+      {/* Select All toggle */}
+      <button
+        onClick={onSelectAll}
+        className={`w-full text-[9px] uppercase tracking-widest mb-1.5 px-1 py-0.5 rounded cursor-pointer transition-all ${
+          allSelected
+            ? isDark ? "text-white/60 bg-white/10" : "text-black/60 bg-black/10"
+            : isDark ? "text-white/30 hover:text-white/50" : "text-black/30 hover:text-black/50"
+        }`}
+      >
+        All
+      </button>
+      <div className="flex flex-col gap-0.5">
         {LINE_GROUPS.map((group) => {
           const [r, g, b] = group.color;
           const selected = isGroupSelected(group);
           return (
             <div
               key={group.label}
-              className={`flex items-center gap-2 px-1.5 py-0.5 rounded-lg cursor-pointer transition-all ${
-                selected
+              className={`flex items-center gap-1 px-1 py-0.5 rounded-lg cursor-pointer transition-all ${
+                !allSelected && selected
                   ? "ring-1 ring-white/40 bg-white/10"
-                  : selectedLine
+                  : !allSelected
                   ? "opacity-30"
                   : "hover:bg-white/5"
               }`}
@@ -71,14 +98,13 @@ export default function Legend({ selectedLine, onSelectLine }: LegendProps) {
                 {group.lines.map((line) => (
                   <span
                     key={line}
-                    className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-white"
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold text-white"
                     style={{ backgroundColor: `rgb(${r},${g},${b})` }}
                   >
                     {line}
                   </span>
                 ))}
               </div>
-              <span className={`text-[10px] ${isDark ? "text-white/40" : "text-black/40"}`}>{group.label}</span>
             </div>
           );
         })}

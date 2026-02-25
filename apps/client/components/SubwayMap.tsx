@@ -216,8 +216,14 @@ export default function SubwayMap() {
   const introStartRef = useRef<number>(0);
   const introRafRef = useRef<number>(0);
 
-  // ---- Line isolation state (Step 5a) -------------------------------------
-  const [selectedLine, setSelectedLine] = useState<string | null>(null);
+  // ---- Line isolation state (multi-select) --------------------------------
+  const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
+
+  // Serialized key for updateTriggers (stable string from Set)
+  const selectedLinesKey = useMemo(
+    () => [...selectedLines].sort().join(","),
+    [selectedLines]
+  );
 
   // ---- Train following state (Step 5c) ------------------------------------
   const [followedTrain, setFollowedTrain] = useState<ProcessedTrain | null>(null);
@@ -242,8 +248,8 @@ export default function SubwayMap() {
     if (urlState.speed) {
       useAnimationStore.getState().setSpeedup(urlState.speed);
     }
-    if (urlState.line) {
-      setSelectedLine(urlState.line);
+    if (urlState.lines && urlState.lines.length > 0) {
+      setSelectedLines(new Set(urlState.lines));
     }
     if (urlState.lat && urlState.lng && urlState.z) {
       setViewState((prev: Record<string, number>) => ({
@@ -258,7 +264,7 @@ export default function SubwayMap() {
   }, []);
 
   // ---- URL state sync (debounced) -----------------------------------------
-  useURLStateSync(viewState, selectedLine);
+  useURLStateSync(viewState, selectedLines);
 
   // ---- Load static data (tracks + stations) once --------------------------
   useEffect(() => {
@@ -510,7 +516,7 @@ export default function SubwayMap() {
         useAnimationStore.getState().togglePlay();
       }
       if (e.code === "Escape") {
-        setSelectedLine(null);
+        setSelectedLines(new Set());
         setFollowedTrain(null);
         setSelectedStation(null);
       }
@@ -550,31 +556,38 @@ export default function SubwayMap() {
     if (followedTrain) setFollowedTrain(null);
   }, [followedTrain]);
 
-  // ---- Line isolation helpers ---------------------------------------------
+  // ---- Line isolation helpers (multi-select) ------------------------------
+  const allSelected = selectedLines.size === 0;
+
   const lineAlpha = useCallback(
     (route: string): number => {
-      if (!selectedLine) return 255;
-      const group = ROUTE_TO_GROUP[selectedLine];
-      if (group && group.includes(route)) return 255;
+      if (allSelected) return 255;
+      if (selectedLines.has(route)) return 255;
       return 20; // 8% opacity
     },
-    [selectedLine]
+    [allSelected, selectedLines]
   );
 
   const stationMatchesLine = useCallback(
     (stationLines: string[]): boolean => {
-      if (!selectedLine) return true;
-      const group = ROUTE_TO_GROUP[selectedLine];
-      if (!group) return true;
-      return stationLines.some((l) => group.includes(l));
+      if (allSelected) return true;
+      return stationLines.some((l) => selectedLines.has(l));
     },
-    [selectedLine]
+    [allSelected, selectedLines]
   );
 
-  // ---- Compute live stats: fastest train + cumulative distance ------------
-  const fastestTrain: FastestTrain | null = useMemo(() => {
-    let best: FastestTrain | null = null;
-    let bestSpeed = 0;
+  // ---- Legend handlers ----------------------------------------------------
+  const handleToggleLine = useCallback((lines: string[]) => {
+    setSelectedLines(new Set(lines));
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedLines(new Set());
+  }, []);
+
+  // ---- Compute live stats: top 5 fastest trains + cumulative distance -----
+  const fastestTrains: FastestTrain[] = useMemo(() => {
+    const top: FastestTrain[] = [];
 
     for (const train of activeTrains) {
       const ts = train.timestamps;
@@ -604,16 +617,18 @@ export default function SubwayMap() {
       const speedMph = (distMiles / dt) * 3600;
 
       // Filter out unrealistic speeds (GPS noise / data artifacts)
-      if (speedMph > 0.5 && speedMph < 120 && speedMph > bestSpeed) {
-        bestSpeed = speedMph;
-        best = {
+      if (speedMph > 0.5 && speedMph < 120) {
+        top.push({
           routeShortName: train.routeShortName,
           color: train.color,
           speedMph: Math.round(speedMph),
-        };
+        });
       }
     }
-    return best;
+
+    // Sort descending by speed, take top 5
+    top.sort((a, b) => b.speedMph - a.speedMph);
+    return top.slice(0, 5);
   }, [activeTrains, currentTimeSec]);
 
   // Accumulate total distance traveled across all trains (resets on refresh)
@@ -672,26 +687,25 @@ export default function SubwayMap() {
         id: "ghost-tracks",
         data: tracks,
         getPath: (d) => d.coordinates,
-        getColor: (d) => [...d.color, selectedLine ? lineAlpha(d.routeShortName) * (CONFIG.TRACK_OPACITY / 255) : CONFIG.TRACK_OPACITY] as [number, number, number, number],
+        getColor: (d) => [...d.color, !allSelected ? lineAlpha(d.routeShortName) * (CONFIG.TRACK_OPACITY / 255) : CONFIG.TRACK_OPACITY] as [number, number, number, number],
         getWidth: CONFIG.TRACK_WIDTH_PX,
         widthUnits: "pixels" as const,
         widthMinPixels: 1,
         capRounded: true,
         jointRounded: true,
         pickable: false,
-        updateTriggers: { getColor: [selectedLine] },
+        updateTriggers: { getColor: [selectedLinesKey] },
       }),
 
-      // 2. Station glow (outer halo) — opacity modulated by system load
+      // 2. Station glow (outer halo) — constant opacity (no breathing)
       new ScatterplotLayer<StationWithRidership>({
         id: "station-glow",
         data: stationsWithRidership,
         getPosition: (d) => [d.lng, d.lat],
         getRadius: (d) => d.glowRadius,
         getFillColor: (d) => {
-          const breathe = 0.3 + 0.7 * systemLoad;
           const match = stationMatchesLine(d.lines);
-          const alpha = match ? Math.round(CONFIG.STATION_GLOW_OPACITY * breathe) : 5;
+          const alpha = match ? CONFIG.STATION_GLOW_OPACITY : 5;
           return [...getStationColor(d.lines), alpha] as [number, number, number, number];
         },
         radiusUnits: "meters" as const,
@@ -699,7 +713,7 @@ export default function SubwayMap() {
         onClick: handleStationClick,
         autoHighlight: true,
         highlightColor: [255, 255, 255, 60],
-        updateTriggers: { getFillColor: [systemLoad, selectedLine] },
+        updateTriggers: { getFillColor: [selectedLinesKey] },
       }),
 
       // 3. Station core (inner dot)
@@ -723,7 +737,7 @@ export default function SubwayMap() {
         radiusUnits: "meters" as const,
         pickable: true,
         onClick: handleStationClick,
-        updateTriggers: { getFillColor: [selectedLine] },
+        updateTriggers: { getFillColor: [selectedLinesKey] },
       }),
 
       // 4. Train worms (TripsLayer)
@@ -733,7 +747,7 @@ export default function SubwayMap() {
         getPath: (d) => d.path,
         getTimestamps: (d) => d.timestamps,
         getColor: (d) => {
-          const alpha = selectedLine ? lineAlpha(d.routeShortName) : 240;
+          const alpha = !allSelected ? lineAlpha(d.routeShortName) : 240;
           return [...d.color, alpha] as [number, number, number, number];
         },
         currentTime: currentTimeSec,
@@ -744,7 +758,7 @@ export default function SubwayMap() {
         fadeTrail: true,
         pickable: true,
         onClick: handleTrainClick,
-        updateTriggers: { getColor: [selectedLine] },
+        updateTriggers: { getColor: [selectedLinesKey] },
       }),
 
       // 5. Station names (visible at high zoom)
@@ -762,21 +776,41 @@ export default function SubwayMap() {
         visible: zoomLevel > CONFIG.STATION_NAME_ZOOM_THRESHOLD,
         pickable: false,
       }),
+
+      // 6. Selected station name label (always visible when selected)
+      new TextLayer<Station>({
+        id: "selected-station-name",
+        data: selectedStation ? [selectedStation] : [],
+        getPosition: (d) => [d.lng, d.lat],
+        getText: (d) => d.name,
+        getSize: 14,
+        getColor: isDark ? [255, 255, 255, 240] : [20, 20, 20, 240],
+        getTextAnchor: "middle" as const,
+        getAlignmentBaseline: "bottom" as const,
+        getPixelOffset: [0, -20],
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontWeight: 700,
+        outlineWidth: 2,
+        outlineColor: isDark ? [0, 0, 0, 200] : [255, 255, 255, 200],
+        visible: true,
+        pickable: false,
+      }),
     ],
     [
       tracks,
       stationsWithRidership,
       activeTrains,
       currentTimeSec,
-      systemLoad,
       daylight,
       isDark,
-      selectedLine,
+      selectedLinesKey,
+      allSelected,
       zoomLevel,
       lineAlpha,
       stationMatchesLine,
       handleStationClick,
       handleTrainClick,
+      selectedStation,
     ]
   );
 
@@ -887,7 +921,11 @@ export default function SubwayMap() {
         }`}
         style={{ transitionDelay: "600ms" }}
       >
-        <Legend selectedLine={selectedLine} onSelectLine={setSelectedLine} />
+        <Legend
+          selectedLines={selectedLines}
+          onToggleLine={handleToggleLine}
+          onSelectAll={handleSelectAll}
+        />
       </div>
 
       <div
@@ -906,7 +944,7 @@ export default function SubwayMap() {
         style={{ transitionDelay: "900ms" }}
       >
         <LiveStatsPanel
-          fastestTrain={fastestTrain}
+          fastestTrains={fastestTrains}
           totalDistanceMiles={totalDistanceMiles}
         />
         <CinematicButton />

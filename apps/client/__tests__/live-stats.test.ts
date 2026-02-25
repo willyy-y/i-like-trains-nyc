@@ -28,12 +28,12 @@ function haversineDistMiles(
   return 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function computeFastestTrain(
+function computeTopFastestTrains(
   trains: TrainSegment[],
-  currentTimeSec: number
-): FastestTrain | null {
-  let best: FastestTrain | null = null;
-  let bestSpeed = 0;
+  currentTimeSec: number,
+  count: number = 5
+): FastestTrain[] {
+  const top: FastestTrain[] = [];
 
   for (const train of trains) {
     const ts = train.timestamps;
@@ -56,16 +56,26 @@ function computeFastestTrain(
     );
     const speedMph = (distMiles / dt) * 3600;
 
-    if (speedMph > 0.5 && speedMph < 120 && speedMph > bestSpeed) {
-      bestSpeed = speedMph;
-      best = {
+    if (speedMph > 0.5 && speedMph < 120) {
+      top.push({
         routeShortName: train.routeShortName,
         color: train.color,
         speedMph: Math.round(speedMph),
-      };
+      });
     }
   }
-  return best;
+
+  top.sort((a, b) => b.speedMph - a.speedMph);
+  return top.slice(0, count);
+}
+
+// Keep the single-best helper for backward compat tests
+function computeFastestTrain(
+  trains: TrainSegment[],
+  currentTimeSec: number
+): FastestTrain | null {
+  const top = computeTopFastestTrains(trains, currentTimeSec, 1);
+  return top.length > 0 ? top[0] : null;
 }
 
 function computeDistanceIncrement(
@@ -177,6 +187,51 @@ describe("computeFastestTrain", () => {
       timestamps: [28800, 28801], // 1 second
     };
     expect(computeFastestTrain([teleportTrain], 28800)).toBeNull();
+  });
+});
+
+describe("computeTopFastestTrains", () => {
+  it("returns empty array for no trains", () => {
+    expect(computeTopFastestTrains([], 28860)).toEqual([]);
+  });
+
+  it("returns up to 5 trains sorted by speed", () => {
+    // Create 7 trains with different speeds
+    const trains: TrainSegment[] = [];
+    const speeds = [10, 30, 50, 20, 40, 60, 15]; // will be sorted: 60,50,40,30,20 (top 5)
+    for (let i = 0; i < speeds.length; i++) {
+      // Distance = speed * time / 3600, time = 120s
+      // We use different endpoints to get different speeds
+      const dist = (speeds[i] * 120) / 3600; // miles
+      // Approximate: 1 degree lat ≈ 69 miles
+      const dLat = dist / 69;
+      trains.push({
+        routeShortName: String.fromCharCode(65 + i),
+        color: [100, 100, 100],
+        path: [
+          [-73.985, 40.758],
+          [-73.985, 40.758 + dLat],
+        ],
+        timestamps: [28800, 28920],
+      });
+    }
+    const result = computeTopFastestTrains(trains, 28860, 5);
+    expect(result.length).toBe(5);
+    // Should be sorted descending
+    for (let i = 0; i < result.length - 1; i++) {
+      expect(result[i].speedMph).toBeGreaterThanOrEqual(result[i + 1].speedMph);
+    }
+  });
+
+  it("returns fewer than 5 if not enough valid trains", () => {
+    const result = computeTopFastestTrains([SAMPLE_TRAIN], 28860, 5);
+    expect(result.length).toBe(1);
+    expect(result[0].routeShortName).toBe("7");
+  });
+
+  it("excludes stationary trains", () => {
+    const result = computeTopFastestTrains([STATIONARY_TRAIN], 28860, 5);
+    expect(result.length).toBe(0);
   });
 });
 
