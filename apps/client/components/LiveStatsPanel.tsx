@@ -3,24 +3,16 @@
 import { useThemeStore } from "@/lib/stores/theme-store";
 import { useAnimationStore } from "@/lib/stores/animation-store";
 
-export interface FastestTrain {
-  routeShortName: string;
-  color: [number, number, number];
-  speedMph: number;
-}
-
 interface LiveStatsPanelProps {
-  fastestTrains: FastestTrain[];
   totalDistanceMiles: number;
 }
 
 function formatDistance(miles: number): string {
-  if (miles >= 1000) return `${(miles / 1000).toFixed(1)}k`;
-  return String(miles);
+  if (miles >= 999999) return "999,999+";
+  return miles.toLocaleString("en-US");
 }
 
 export default function LiveStatsPanel({
-  fastestTrains,
   totalDistanceMiles,
 }: LiveStatsPanelProps) {
   const isDark = useThemeStore((s) => s.resolved) === "dark";
@@ -43,33 +35,6 @@ export default function LiveStatsPanel({
         <div className={`text-2xl font-bold tabular-nums leading-tight ${textPrimary}`}>
           {activeTrainCount}
         </div>
-      </div>
-
-      {/* Speed leaderboard — top 3 all-time since page load */}
-      <div className="mb-2.5">
-        <div className={`text-[9px] uppercase tracking-wider mb-1 ${textDim}`}>
-          Top Speed
-        </div>
-        {fastestTrains.length > 0 ? (
-          <div className="flex flex-col gap-1">
-            {fastestTrains.map((train, i) => (
-              <div key={`${train.routeShortName}-${i}`} className="flex items-center gap-2">
-                <span
-                  className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold text-white shrink-0"
-                  style={{ backgroundColor: `rgb(${train.color.join(",")})` }}
-                >
-                  {train.routeShortName}
-                </span>
-                <span className={`text-sm font-bold tabular-nums leading-tight ${textPrimary}`}>
-                  {train.speedMph}
-                </span>
-                <span className={`text-[9px] ${textMuted}`}>mph</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className={`text-sm ${textDim}`}>---</div>
-        )}
       </div>
 
       {/* Distance traveled */}

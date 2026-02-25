@@ -31,7 +31,6 @@ import StationPanel from "./StationPanel";
 import ThemeToggle from "./ThemeToggle";
 import ShareButton from "./ShareButton";
 import LiveStatsPanel from "./LiveStatsPanel";
-import type { FastestTrain } from "./LiveStatsPanel";
 import CinematicButton from "./CinematicButton";
 import { useCameraStore } from "@/lib/stores/camera-store";
 
@@ -585,71 +584,7 @@ export default function SubwayMap() {
     setSelectedLines(new Set());
   }, []);
 
-  // ---- Speed leaderboard: top 3 fastest speeds recorded since page load ---
-  const leaderboardRef = useRef<FastestTrain[]>([]);
-  const [speedLeaderboard, setSpeedLeaderboard] = useState<FastestTrain[]>([]);
-
-  useMemo(() => {
-    let changed = false;
-
-    for (const train of activeTrains) {
-      const ts = train.timestamps;
-      const path = train.path;
-      if (ts.length < 2) continue;
-
-      // Find current segment via binary search
-      let lo = 0;
-      let hi = ts.length - 1;
-      while (lo < hi - 1) {
-        const mid = (lo + hi) >> 1;
-        if (ts[mid] <= currentTimeSec) lo = mid;
-        else hi = mid;
-      }
-
-      const dt = ts[hi] - ts[lo];
-      if (dt <= 0) continue;
-
-      // Haversine distance between segment endpoints
-      const lat1 = path[lo][1] * Math.PI / 180;
-      const lat2 = path[hi][1] * Math.PI / 180;
-      const dLat = lat2 - lat1;
-      const dLng = (path[hi][0] - path[lo][0]) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-      const distMiles = 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-      const speedMph = (distMiles / dt) * 3600;
-      const rounded = Math.round(speedMph);
-
-      // Filter out unrealistic speeds and check if it beats the leaderboard
-      if (speedMph > 0.5 && speedMph < 120) {
-        const board = leaderboardRef.current;
-        const minOnBoard = board.length >= 3 ? board[board.length - 1].speedMph : 0;
-
-        if (rounded > minOnBoard || board.length < 3) {
-          // Check for duplicate (same line + same speed already on board)
-          const isDupe = board.some(
-            (b) => b.routeShortName === train.routeShortName && b.speedMph === rounded
-          );
-          if (!isDupe) {
-            board.push({
-              routeShortName: train.routeShortName,
-              color: train.color,
-              speedMph: rounded,
-            });
-            board.sort((a, b) => b.speedMph - a.speedMph);
-            if (board.length > 3) board.length = 3;
-            changed = true;
-          }
-        }
-      }
-    }
-
-    if (changed) {
-      setSpeedLeaderboard([...leaderboardRef.current]);
-    }
-  }, [activeTrains, currentTimeSec]);
-
-  // Accumulate total distance traveled across all trains (resets on refresh)
+  // ---- Accumulate total distance traveled across all trains (resets on refresh)
   const distanceRef = useRef(0);
   const prevTimeSecRef = useRef(currentTimeSec);
 
@@ -962,7 +897,6 @@ export default function SubwayMap() {
         style={{ transitionDelay: "900ms" }}
       >
         <LiveStatsPanel
-          fastestTrains={speedLeaderboard}
           totalDistanceMiles={totalDistanceMiles}
         />
         <CinematicButton />
