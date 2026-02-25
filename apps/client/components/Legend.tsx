@@ -66,7 +66,7 @@ export default function Legend({ selectedLines, onToggleLine, onSelectAll }: Leg
   }
 
   return (
-    <div className={`fixed top-[220px] left-4 max-sm:hidden ${panel} rounded-xl border p-2 z-40 select-none`}>
+    <div className={`fixed top-[220px] left-4 max-sm:hidden ${panel} rounded-xl border p-2 z-40 select-none max-h-[calc(100vh-220px-120px)] overflow-y-auto`}>
       {/* Select All toggle */}
       <button
         onClick={onSelectAll}
