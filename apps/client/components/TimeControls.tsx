@@ -2,6 +2,7 @@
 
 import { useAnimationStore } from "@/lib/stores/animation-store";
 import { useThemeStore } from "@/lib/stores/theme-store";
+import { useCameraStore } from "@/lib/stores/camera-store";
 import { CONFIG } from "@/lib/config";
 
 export default function TimeControls() {
@@ -16,6 +17,8 @@ export default function TimeControls() {
   const setSimTimeMs = useAnimationStore((s) => s.setSimTimeMs);
 
   const isDark = useThemeStore((s) => s.resolved) === "dark";
+  const activeTourType = useCameraStore((s) => s.activeTourType);
+  const isSpeedLocked = activeTourType === "rush-hour";
 
   const d = new Date(simTimeMs);
   const secondsSinceMidnight =
@@ -65,7 +68,8 @@ export default function TimeControls() {
         <select
           value={speedup}
           onChange={handleSpeedChange}
-          className={`ml-auto text-[10px] rounded-md px-1.5 py-0.5 outline-none cursor-pointer border ${isDark ? "bg-white/10 border-white/10 text-white/70" : "bg-black/5 border-black/10 text-black/70"}`}
+          disabled={isSpeedLocked}
+          className={`ml-auto text-[10px] rounded-md px-1.5 py-0.5 outline-none border ${isSpeedLocked ? "cursor-not-allowed opacity-40" : "cursor-pointer"} ${isDark ? "bg-white/10 border-white/10 text-white/70" : "bg-black/5 border-black/10 text-black/70"}`}
         >
           {CONFIG.SPEED_PRESETS.map((s, i) => (
             <option key={s} value={s}>

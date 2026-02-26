@@ -172,6 +172,8 @@ export default function SubwayMap() {
   const isTouring = useCameraStore((s) => s.isTouring);
   const cameraGetViewState = useCameraStore((s) => s.getViewState);
   const cameraTick = useCameraStore((s) => s.tick);
+  const isBreathingEnabled = useCameraStore((s) => s.isBreathingEnabled);
+  const isDynamicStations = useCameraStore((s) => s.isDynamicStations);
 
   // Twilight overlay: warm golden tint during sunrise/sunset transitions
   const isTwilight = daylight > 0.05 && daylight < 0.95;
@@ -650,23 +652,27 @@ export default function SubwayMap() {
         updateTriggers: { getColor: [selectedLinesKey] },
       }),
 
-      // 2. Station glow (outer halo) — constant opacity (no breathing)
+      // 2. Station glow (outer halo) — uniform in default mode, ridership-based in rush hour
       new ScatterplotLayer<StationWithRidership>({
         id: "station-glow",
         data: stationsWithRidership,
         getPosition: (d) => [d.lng, d.lat],
-        getRadius: (d) => d.glowRadius,
+        getRadius: (d) => isDynamicStations ? d.glowRadius : CONFIG.STATION_GLOW_RADIUS,
         getFillColor: (d) => {
           const match = stationMatchesLine(d.lines);
-          const alpha = match ? CONFIG.STATION_GLOW_OPACITY : 5;
+          let alpha = match ? CONFIG.STATION_GLOW_OPACITY : 5;
+          if (isBreathingEnabled) {
+            alpha = Math.round(alpha * (0.3 + 0.7 * systemLoad));
+          }
           return [...getStationColor(d.lines), alpha] as [number, number, number, number];
         },
         radiusUnits: "meters" as const,
+        radiusMaxPixels: isDynamicStations ? undefined : CONFIG.STATION_GLOW_MAX_PIXELS,
         pickable: true,
         onClick: handleStationClick,
         autoHighlight: true,
         highlightColor: [255, 255, 255, 60],
-        updateTriggers: { getFillColor: [selectedLinesKey] },
+        updateTriggers: { getFillColor: [selectedLinesKey, isBreathingEnabled, systemLoad], getRadius: [isDynamicStations] },
       }),
 
       // 3. Station core (inner dot)
@@ -688,6 +694,7 @@ export default function SubwayMap() {
           ] as [number, number, number, number];
         },
         radiusUnits: "meters" as const,
+        radiusMaxPixels: CONFIG.STATION_CORE_MAX_PIXELS,
         pickable: true,
         onClick: handleStationClick,
         updateTriggers: { getFillColor: [selectedLinesKey] },
@@ -764,6 +771,9 @@ export default function SubwayMap() {
       handleStationClick,
       handleTrainClick,
       selectedStation,
+      isBreathingEnabled,
+      isDynamicStations,
+      systemLoad,
     ]
   );
 

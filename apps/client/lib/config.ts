@@ -31,8 +31,11 @@ export const CONFIG = {
 
   // Station rendering
   STATION_CORE_RADIUS: 50, // meters
-  STATION_GLOW_RADIUS_MIN: 80,
+  STATION_CORE_MAX_PIXELS: 6, // cap screen size when zoomed in
+  STATION_GLOW_RADIUS: 120, // meters — fixed glow for default mode
+  STATION_GLOW_RADIUS_MIN: 80, // used by ridership-based sizing (rush hour)
   STATION_GLOW_RADIUS_MAX: 400,
+  STATION_GLOW_MAX_PIXELS: 20, // cap screen size when zoomed in
   STATION_GLOW_OPACITY: 25,
   STATION_CORE_OPACITY: 160,
   STATION_NAME_ZOOM_THRESHOLD: 14,
