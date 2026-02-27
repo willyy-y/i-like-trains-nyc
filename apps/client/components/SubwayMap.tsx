@@ -844,11 +844,13 @@ export default function SubwayMap() {
         onClick={(info) => {
           if (!info.object) handleMapClick();
         }}
+        style={{ width: "100%", height: "100%" }}
       >
         <Map
           mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ""}
           mapStyle={getMapStyle(resolved)}
           projection={{ name: "mercator" }}
+          style={{ width: "100%", height: "100%" }}
         />
       </DeckGL>
 
